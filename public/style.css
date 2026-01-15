@@ -1119,3 +1119,379 @@ body {
 .hidden {
     display: none !important;
 }
+/* Add these styles to your existing style.css */
+
+/* Emoji Picker Fix */
+.emoji-picker-container {
+    position: absolute;
+    bottom: 80px;
+    right: 24px;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border-color);
+    padding: 16px;
+    width: 320px;
+    max-height: 400px;
+    overflow: hidden;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+}
+
+.emoji-picker-container.hidden {
+    display: none;
+}
+
+.emoji-search {
+    padding: 10px 12px;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-size: 14px;
+    width: 100%;
+}
+
+.emoji-search:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.emoji-categories {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+}
+
+.emoji-category-btn {
+    padding: 6px 12px;
+    border: none;
+    background: var(--light-color);
+    border-radius: 20px;
+    font-size: 12px;
+    color: var(--secondary-color);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.3s;
+}
+
+.emoji-category-btn:hover,
+.emoji-category-btn.active {
+    background: var(--primary-color);
+    color: white;
+}
+
+.emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.emoji-btn {
+    font-size: 22px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 8px;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.emoji-btn:hover {
+    background: var(--light-color);
+    transform: scale(1.2);
+}
+
+/* Delete Button in Message Actions */
+.action-btn.delete-btn {
+    color: var(--danger-color);
+}
+
+.action-btn.delete-btn:hover {
+    background: rgba(220, 53, 69, 0.1);
+    color: var(--danger-color);
+}
+
+/* Delete Confirmation Modal */
+.delete-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    animation: fadeIn 0.3s ease;
+}
+
+.delete-modal.hidden {
+    display: none;
+}
+
+.delete-modal .modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 16px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: slideUp 0.3s ease;
+}
+
+.delete-modal h3 {
+    color: var(--danger-color);
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.delete-modal p {
+    color: var(--secondary-color);
+    margin-bottom: 25px;
+    line-height: 1.5;
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.btn-secondary {
+    background: var(--light-color);
+    color: var(--secondary-color);
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-secondary:hover {
+    background: #e4e6e9;
+}
+
+.btn-danger {
+    background: var(--danger-color);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+
+/* Message Actions - Add more space for delete button */
+.message-actions {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    background: white;
+    border-radius: 20px;
+    padding: 4px;
+    box-shadow: var(--shadow);
+}
+
+.message-wrapper:hover .message-actions {
+    opacity: 1;
+}
+
+.message-wrapper.sent .message-actions {
+    left: -70px; /* Increased from -50px to -70px */
+}
+
+.message-wrapper.received .message-actions {
+    right: -70px; /* Increased from -50px to -70px */
+}
+
+.action-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: white;
+    color: var(--secondary-color);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s;
+    font-size: 14px;
+}
+
+.action-btn:hover {
+    background: var(--light-color);
+    transform: scale(1.1);
+}
+
+.action-btn.reply-btn:hover {
+    color: var(--primary-color);
+}
+
+.action-btn.react-btn:hover {
+    color: var(--warning-color);
+}
+
+.action-btn.delete-btn:hover {
+    color: var(--danger-color);
+}
+
+/* Image Modal Fix */
+.image-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.image-modal.hidden {
+    display: none;
+}
+
+.modal-content {
+    max-width: 90%;
+    max-height: 90%;
+    position: relative;
+}
+
+.modal-content img {
+    max-width: 100%;
+    max-height: 90vh;
+    border-radius: 8px;
+}
+
+.close-modal {
+    position: absolute;
+    top: -40px;
+    right: 0;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 20px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.close-modal:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Hide class */
+.hidden {
+    display: none !important;
+}
+
+/* Make sure input buttons are visible */
+.input-buttons {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.input-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: var(--light-color);
+    color: var(--secondary-color);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s;
+    font-size: 18px;
+}
+
+.input-btn:hover {
+    background: #e4e6e9;
+    color: var(--primary-color);
+    transform: scale(1.05);
+}
+
+/* Message wrapper positioning */
+.message-wrapper {
+    position: relative;
+    padding: 2px 80px; /* Increased from 60px to 80px for delete button */
+    display: flex;
+    flex-direction: column;
+}
+
+/* Typing indicator dots */
+.typing-dots {
+    display: inline-flex;
+    gap: 2px;
+    margin-left: 4px;
+}
+
+.typing-dots span {
+    width: 4px;
+    height: 4px;
+    background: var(--secondary-color);
+    border-radius: 50%;
+    animation: typing 1.4s infinite;
+}
+
+.typing-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes typing {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+}
