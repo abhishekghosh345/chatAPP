@@ -1,4 +1,4 @@
-// script.js - Complete with emoji picker and delete functionality
+// script.js - Complete with emoji picker, delete functionality, and session persistence
 console.log("✅ script.js is loading!");
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -45,12 +45,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // ==================== VARIABLES ====================
     let socket;
     let currentUsername = '';
+    let currentUserId = null;
     let typingTimeout;
     let isConnected = false;
     let messageToReply = null;
     let selectedImage = null;
     let lastMessageDate = null;
     let messageToDelete = null;
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT_ATTEMPTS = 5;
     
     // Emoji data
     const emojiCategoriesData = [
@@ -75,6 +78,38 @@ document.addEventListener('DOMContentLoaded', function() {
             emojis: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❤️‍🔥', '❤️‍🩹', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️', '✝️', '☪️', '🕉️', '☸️', '✡️', '🔯', '🕎', '☯️', '☦️', '🛐', '⛎', '♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓', '🆔', '⚛️', '🉑', '☢️', '☣️', '📴', '📳', '🈶', '🈚', '🈸', '🈺', '🈷️', '✴️', '🆚', '💮', '🉐', '㊙️', '㊗️', '🈴', '🈵', '🈹', '🈲', '🅰️', '🅱️', '🆎', '🆑', '🅾️', '🆘', '❌', '⭕', '🛑', '⛔', '📛', '🚫', '💯', '💢', '♨️', '🚷', '🚯', '🚳', '🚱', '🔞', '📵', '🚭'] 
         }
     ];
+    
+    // ==================== SESSION MANAGEMENT ====================
+    
+    function saveUserSession(username, userId) {
+        localStorage.setItem('chat_username', username);
+        localStorage.setItem('chat_userId', userId);
+        localStorage.setItem('chat_session_time', Date.now().toString());
+        console.log('Session saved for:', username);
+    }
+    
+    function loadUserSession() {
+        const username = localStorage.getItem('chat_username');
+        const userId = localStorage.getItem('chat_userId');
+        const sessionTime = localStorage.getItem('chat_session_time');
+        
+        if (username && userId && sessionTime) {
+            const sessionAge = Date.now() - parseInt(sessionTime);
+            if (sessionAge < 24 * 60 * 60 * 1000) { // 24 hours
+                return { username, userId };
+            } else {
+                clearUserSession();
+            }
+        }
+        return null;
+    }
+    
+    function clearUserSession() {
+        localStorage.removeItem('chat_username');
+        localStorage.removeItem('chat_userId');
+        localStorage.removeItem('chat_session_time');
+        console.log('Session cleared');
+    }
     
     // ==================== UTILITY FUNCTIONS ====================
     
@@ -136,6 +171,69 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         return date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+    
+    function disableJoinButton() {
+        if (joinBtn) {
+            joinBtn.disabled = true;
+            joinBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
+        }
+    }
+    
+    function enableJoinButton() {
+        if (joinBtn) {
+            joinBtn.disabled = false;
+            joinBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Join Chat';
+        }
+    }
+    
+    function updateConnectionStatus(connected) {
+        if (!connectionStatus) return;
+        
+        if (connected) {
+            connectionStatus.innerHTML = '<i class="fas fa-circle"></i> Connected';
+            connectionStatus.classList.remove('disconnected');
+            connectionStatus.classList.add('connected');
+        } else {
+            connectionStatus.innerHTML = '<i class="fas fa-circle"></i> Disconnected';
+            connectionStatus.classList.remove('connected');
+            connectionStatus.classList.add('disconnected');
+        }
+    }
+    
+    function updateOnlineCount(count) {
+        if (onlineCountSpan) {
+            onlineCountSpan.textContent = count;
+        }
+    }
+    
+    // ==================== VALIDATION FUNCTIONS ====================
+    
+    function validateUsername(username) {
+        if (!username) {
+            showError('Please enter a username');
+            return false;
+        }
+        
+        if (username.length < 3) {
+            showError('Username must be at least 3 characters');
+            return false;
+        }
+        
+        if (username.length > 20) {
+            showError('Username must be less than 20 characters');
+            return false;
+        }
+        
+        return true;
+    }
+    
+    function handleUsernameInput() {
+        clearError();
+        const username = usernameInput ? usernameInput.value.trim() : '';
+        if (joinBtn) {
+            joinBtn.disabled = username.length < 3;
+        }
     }
     
     // ==================== EMOJI PICKER FUNCTIONS ====================
@@ -396,7 +494,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.body.style.overflow = 'auto';
     }
     
-    function deleteMessage(messageId) {
+    function deleteOwnMessage(messageId) {
         if (!socket || !isConnected) return;
         
         // Emit delete event to server
@@ -412,15 +510,6 @@ document.addEventListener('DOMContentLoaded', function() {
         showSystemMessage('Message deleted');
     }
     
-    function deleteOwnMessage(messageId) {
-        // For now, just delete from UI
-        const messageElement = messagesContainer.querySelector(`[data-message-id="${messageId}"]`);
-        if (messageElement) {
-            messageElement.remove();
-            showSystemMessage('Message deleted');
-        }
-    }
-    
     // ==================== MESSAGE FUNCTIONS ====================
     
     function addMessage(data, isSent) {
@@ -428,7 +517,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const messageWrapper = document.createElement('div');
         messageWrapper.className = `message-wrapper ${isSent ? 'sent' : 'received'}`;
-        messageWrapper.dataset.messageId = data.id || Date.now();
+        messageWrapper.dataset.messageId = data.id || 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         
         let messageHTML = `
             <div class="message ${isSent ? 'sent' : 'received'}">
@@ -530,6 +619,12 @@ document.addEventListener('DOMContentLoaded', function() {
             btn.onmouseout = () => btn.style.transform = 'scale(1)';
             btn.onclick = () => {
                 // React to message
+                if (socket && isConnected) {
+                    socket.emit('message-reaction', {
+                        messageId: messageId,
+                        reaction: emoji
+                    });
+                }
                 document.body.removeChild(menu);
             };
             menu.appendChild(btn);
@@ -554,32 +649,66 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // ==================== VALIDATION FUNCTIONS ====================
+    // ==================== USER LIST FUNCTIONS ====================
     
-    function validateUsername(username) {
-        if (!username) {
-            showError('Please enter a username');
-            return false;
-        }
+    function updateUsersList(users) {
+        if (!usersListDiv) return;
         
-        if (username.length < 3) {
-            showError('Username must be at least 3 characters');
-            return false;
-        }
+        console.log('Updating users list with:', users);
         
-        if (username.length > 20) {
-            showError('Username must be less than 20 characters');
-            return false;
-        }
+        usersListDiv.innerHTML = '';
         
-        return true;
-    }
-    
-    function handleUsernameInput() {
-        clearError();
-        const username = usernameInput ? usernameInput.value.trim() : '';
-        if (joinBtn) {
-            joinBtn.disabled = username.length < 3;
+        if (!users || users.length === 0) {
+            const emptyMsg = document.createElement('div');
+            emptyMsg.className = 'user-item';
+            emptyMsg.innerHTML = '<i class="fas fa-user-friends"></i> <span>No other users online</span>';
+            usersListDiv.appendChild(emptyMsg);
+            updateOnlineCount(1); // Just yourself
+        } else {
+            // Filter out current user
+            const otherUsers = users.filter(u => u.username !== currentUsername);
+            
+            if (otherUsers.length === 0) {
+                const emptyMsg = document.createElement('div');
+                emptyMsg.className = 'user-item';
+                emptyMsg.innerHTML = '<i class="fas fa-user-friends"></i> <span>No other users online</span>';
+                usersListDiv.appendChild(emptyMsg);
+            } else {
+                otherUsers.forEach(user => {
+                    const userDiv = document.createElement('div');
+                    userDiv.className = 'user-item';
+                    
+                    // Calculate how long user has been online
+                    const joinTime = new Date(user.joinedAt || Date.now());
+                    const now = new Date();
+                    const diffMs = now - joinTime;
+                    const diffMins = Math.floor(diffMs / 60000);
+                    let onlineTime = '';
+                    
+                    if (diffMins < 1) onlineTime = 'Just now';
+                    else if (diffMins < 60) onlineTime = `${diffMins}m ago`;
+                    else if (diffMins < 1440) onlineTime = `${Math.floor(diffMins / 60)}h ago`;
+                    else onlineTime = `${Math.floor(diffMins / 1440)}d ago`;
+                    
+                    userDiv.innerHTML = `
+                        <i class="fas fa-circle" style="color: #31a24c"></i>
+                        <span>${escapeHtml(user.username)}</span>
+                        <small style="margin-left: auto; color: #65676b; font-size: 11px;">${onlineTime}</small>
+                    `;
+                    
+                    userDiv.addEventListener('click', () => {
+                        if (messageInput) {
+                            messageInput.value += `@${user.username} `;
+                            messageInput.focus();
+                            messageInput.dispatchEvent(new Event('input'));
+                        }
+                    });
+                    
+                    usersListDiv.appendChild(userDiv);
+                });
+            }
+            
+            updateOnlineCount(users.length);
         }
     }
     
@@ -591,38 +720,50 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!validateUsername(username)) {
             return;
         }
-        
+
         console.log("Joining as:", username);
         
-        if (joinBtn) {
-            joinBtn.disabled = true;
-            joinBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
-        }
+        disableJoinButton();
+        clearError();
         
-        // Connect socket if not connected
-        if (!socket) {
-            connectSocket();
-        }
-        
-        // Simulate connection for now
-        setTimeout(() => {
-            currentUsername = username;
+        // Check for existing session
+        const session = loadUserSession();
+        if (session && session.username === username) {
+            // Try to reconnect with existing session
+            currentUserId = session.userId;
+            console.log('Attempting reconnection with session:', session);
             
-            if (currentUserSpan) {
-                currentUserSpan.textContent = username;
-            }
-            if (loginScreen) loginScreen.classList.add('hidden');
-            if (chatScreen) chatScreen.classList.remove('hidden');
-            if (messageInput) messageInput.focus();
-            
-            if (joinBtn) {
-                joinBtn.disabled = false;
-                joinBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Join Chat';
+            if (!socket) {
+                connectSocket();
             }
             
-            showSystemMessage(`Welcome to the chat, ${username}!`);
-            console.log("Chat screen shown!");
-        }, 1000);
+            // Give time for socket connection
+            setTimeout(() => {
+                if (socket && socket.connected) {
+                    socket.emit('user-reconnect', {
+                        username: username,
+                        userId: currentUserId
+                    });
+                } else {
+                    // Fall back to regular join
+                    socket.emit('user-join', username);
+                }
+            }, 500);
+        } else {
+            // New join
+            if (!socket) {
+                connectSocket();
+            }
+            
+            setTimeout(() => {
+                if (socket && socket.connected) {
+                    socket.emit('user-join', username);
+                } else {
+                    showError('Could not connect to server. Please refresh and try again.');
+                    enableJoinButton();
+                }
+            }, 500);
+        }
     }
     
     function leaveChat() {
@@ -630,7 +771,11 @@ document.addEventListener('DOMContentLoaded', function() {
             socket.disconnect();
         }
         
+        clearUserSession();
+        
         currentUsername = '';
+        currentUserId = null;
+        
         if (loginScreen) loginScreen.classList.remove('hidden');
         if (chatScreen) chatScreen.classList.add('hidden');
         if (messagesContainer) messagesContainer.innerHTML = '';
@@ -645,7 +790,10 @@ document.addEventListener('DOMContentLoaded', function() {
         removeImage();
         hideDeleteModal();
         
-        console.log("Left chat");
+        updateConnectionStatus(false);
+        enableJoinButton();
+        
+        console.log("Left chat and cleared session");
     }
     
     function sendMessage() {
@@ -662,24 +810,34 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         const messageData = {
-            username: currentUsername,
             message: message,
-            timestamp: Date.now(),
-            type: selectedImage ? 'image' : 'text'
+            type: selectedImage ? 'image' : 'text',
+            replyTo: messageToReply ? messageToReply.id : null
         };
         
         if (selectedImage) {
             messageData.imageData = selectedImage.data;
+            messageData.imageName = selectedImage.name;
         }
         
-        // Add to UI immediately
-        addMessage(messageData, true);
+        // Send via socket
+        if (socket && isConnected) {
+            socket.emit('send-message', messageData);
+        } else {
+            showSystemMessage('Not connected to server');
+            return;
+        }
         
         // Clear inputs
         if (messageInput) messageInput.value = '';
         removeImage();
         cancelReply();
         if (messageInput) messageInput.focus();
+        
+        // Clear typing indicator
+        if (socket && isConnected) {
+            socket.emit('typing', false);
+        }
         
         console.log("Message sent:", messageData);
     }
@@ -692,7 +850,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function handleTyping() {
-        // Typing indicator logic here
+        if (!currentUsername || !isConnected) return;
+        
+        if (socket && isConnected) {
+            socket.emit('typing', true);
+            
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                if (isConnected) {
+                    socket.emit('typing', false);
+                }
+            }, 1000);
+        }
     }
     
     // ==================== SOCKET FUNCTIONS ====================
@@ -703,37 +872,179 @@ document.addEventListener('DOMContentLoaded', function() {
         
         socket = io(`${protocol}//${host}`, {
             transports: ['websocket', 'polling'],
-            reconnection: true
+            reconnection: true,
+            reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            timeout: 10000
         });
-        
+
+        // Socket event handlers
         socket.on('connect', () => {
             console.log('✅ Connected to server');
             isConnected = true;
-            if (connectionStatus) {
-                connectionStatus.innerHTML = '<i class="fas fa-circle"></i> Connected';
-                connectionStatus.classList.add('connected');
-            }
+            reconnectAttempts = 0;
+            updateConnectionStatus(true);
+            
+            // Send periodic activity updates
+            setInterval(() => {
+                if (socket.connected && currentUsername) {
+                    socket.emit('user-active');
+                }
+            }, 30000); // Every 30 seconds
         });
-        
-        socket.on('disconnect', () => {
-            console.log('❌ Disconnected');
+
+        socket.on('disconnect', (reason) => {
+            console.log('❌ Disconnected:', reason);
             isConnected = false;
-            if (connectionStatus) {
-                connectionStatus.innerHTML = '<i class="fas fa-circle"></i> Disconnected';
-                connectionStatus.classList.remove('connected');
+            updateConnectionStatus(false);
+            
+            // Try to reconnect if it wasn't a manual leave
+            if (currentUsername && reason !== 'io client disconnect') {
+                reconnectAttempts++;
+                if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+                    console.log(`Reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
+                    setTimeout(() => {
+                        if (!socket.connected && currentUsername) {
+                            socket.connect();
+                        }
+                    }, 2000);
+                }
             }
         });
-        
+
+        socket.on('connect_error', (error) => {
+            console.error('Connection error:', error);
+            updateConnectionStatus(false);
+        });
+
+        socket.on('username-taken', () => {
+            showError('Username is already taken. Please choose another.');
+            enableJoinButton();
+        });
+
+        socket.on('user-joined', (data) => {
+            currentUsername = data.username;
+            currentUserId = data.userId || data.username;
+            
+            // Save session
+            saveUserSession(currentUsername, currentUserId);
+            
+            if (currentUserSpan) {
+                currentUserSpan.textContent = currentUsername;
+            }
+            if (loginScreen) loginScreen.classList.add('hidden');
+            if (chatScreen) chatScreen.classList.remove('hidden');
+            if (messageInput) messageInput.focus();
+            
+            showSystemMessage(`Welcome to the chat, ${currentUsername}! There are ${data.onlineCount || 0} users online.`);
+            
+            enableJoinButton();
+            
+            console.log("User joined successfully:", data);
+        });
+
+        socket.on('reconnect-success', (data) => {
+            currentUsername = data.username;
+            currentUserId = data.userId;
+            
+            if (currentUserSpan) {
+                currentUserSpan.textContent = currentUsername;
+            }
+            if (loginScreen) loginScreen.classList.add('hidden');
+            if (chatScreen) chatScreen.classList.remove('hidden');
+            if (messageInput) messageInput.focus();
+            
+            showSystemMessage(`Welcome back, ${currentUsername}! Reconnected successfully. ${data.onlineCount || 0} users online.`);
+            
+            enableJoinButton();
+            
+            console.log("Reconnected successfully:", data);
+        });
+
+        socket.on('user-connected', (data) => {
+            showSystemMessage(`${data.username} joined the chat`);
+            if (data.userCount !== undefined) {
+                updateOnlineCount(data.userCount);
+            }
+        });
+
+        socket.on('user-disconnected', (data) => {
+            showSystemMessage(`${data.username} left the chat`);
+            if (data.userCount !== undefined) {
+                updateOnlineCount(data.userCount);
+            }
+            
+            // Remove from users list
+            if (usersListDiv) {
+                const userElements = usersListDiv.querySelectorAll('.user-item');
+                userElements.forEach(userEl => {
+                    if (userEl.querySelector('span').textContent === data.username) {
+                        userEl.remove();
+                    }
+                });
+            }
+        });
+
+        socket.on('users-list', (users) => {
+            console.log('Received users list:', users);
+            updateUsersList(users);
+        });
+
+        socket.on('message-history', (history) => {
+            if (!messagesContainer) return;
+            
+            console.log('Received message history:', history?.length || 0, 'messages');
+            
+            messagesContainer.innerHTML = '';
+            
+            if (history && history.length > 0) {
+                history.forEach(msg => {
+                    addMessage(msg, msg.username === currentUsername);
+                });
+                scrollToBottom();
+            } else {
+                const welcomeMsg = document.createElement('div');
+                welcomeMsg.className = 'welcome-message';
+                welcomeMsg.innerHTML = `
+                    <i class="fas fa-comment-alt"></i>
+                    <h2>Welcome to Self-Hosted Chat</h2>
+                    <p>No messages yet. Start the conversation!</p>
+                `;
+                messagesContainer.appendChild(welcomeMsg);
+            }
+        });
+
         socket.on('receive-message', (data) => {
             addMessage(data, data.username === currentUsername);
+            scrollToBottom();
         });
-        
-        socket.on('user-connected', (username) => {
-            showSystemMessage(`${username} joined the chat`);
+
+        socket.on('user-typing', (data) => {
+            if (!typingIndicator) return;
+            
+            if (data.isTyping && data.username !== currentUsername) {
+                typingIndicator.innerHTML = `${data.username} is typing <span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>`;
+            } else {
+                typingIndicator.innerHTML = '';
+            }
         });
-        
-        socket.on('user-disconnected', (username) => {
-            showSystemMessage(`${username} left the chat`);
+
+        socket.on('message-deleted', (data) => {
+            const messageElement = messagesContainer.querySelector(`[data-message-id="${data.messageId}"]`);
+            if (messageElement) {
+                messageElement.remove();
+                showSystemMessage(`A message was deleted by ${data.deletedBy}`);
+            }
+        });
+
+        socket.on('update-reaction', (data) => {
+            // Handle reaction updates
+            const messageElement = messagesContainer.querySelector(`[data-message-id="${data.messageId}"]`);
+            if (messageElement) {
+                // Add reaction UI here
+                console.log('Reaction update:', data);
+            }
         });
     }
     
@@ -795,6 +1106,10 @@ document.addEventListener('DOMContentLoaded', function() {
             if (deleteModal && !deleteModal.contains(e.target) && !deleteModal.classList.contains('hidden')) {
                 hideDeleteModal();
             }
+            
+            if (imageModal && !imageModal.contains(e.target) && e.target !== modalImage && !imageModal.classList.contains('hidden')) {
+                closeImageModal();
+            }
         });
         
         // Escape key to close modals
@@ -817,11 +1132,31 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function init() {
         console.log("Initializing app...");
+        
+        // Try to auto-login if session exists
+        const session = loadUserSession();
+        if (session) {
+            console.log("Found existing session for:", session.username);
+            if (usernameInput) {
+                usernameInput.value = session.username;
+                usernameInput.dispatchEvent(new Event('input'));
+            }
+            
+            // Auto-join after a short delay
+            setTimeout(() => {
+                if (usernameInput && usernameInput.value === session.username) {
+                    joinChat();
+                }
+            }, 500);
+        }
+        
         setupEventListeners();
         initEmojiPicker();
         initImageInput();
         
-        if (usernameInput) usernameInput.focus();
+        if (usernameInput && !session) {
+            usernameInput.focus();
+        }
         
         // Add CSS animations
         const style = document.createElement('style');
@@ -831,6 +1166,13 @@ document.addEventListener('DOMContentLoaded', function() {
             .fa-spinner { animation: spin 1s linear infinite; }
             @keyframes spin { 100% { transform: rotate(360deg); } }
             .connected i { color: #28a745 !important; }
+            .disconnected i { color: #dc3545 !important; }
+            .user-item small { opacity: 0.7; }
+            .typing-dots { display: inline-flex; gap: 2px; margin-left: 4px; }
+            .typing-dots span { width: 4px; height: 4px; background: #65676b; border-radius: 50%; animation: typing 1.4s infinite; }
+            .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+            .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+            @keyframes typing { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
         `;
         document.head.appendChild(style);
         
@@ -845,5 +1187,12 @@ document.addEventListener('DOMContentLoaded', function() {
 window.addEventListener('error', function(e) {
     console.error('Global error:', e.message, 'at', e.filename, ':', e.lineno);
 });
+
+// Make openImageModal available globally
+window.openImageModal = function(imageSrc) {
+    document.getElementById('modal-image').src = imageSrc;
+    document.getElementById('image-modal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+};
 
 console.log("📄 script.js file loaded successfully!");
