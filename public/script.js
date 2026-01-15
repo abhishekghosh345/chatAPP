@@ -1,4 +1,4 @@
-// script.js - Complete with emoji picker, delete functionality, and session persistence
+// script.js - Complete with all features working
 console.log("✅ script.js is loading!");
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -52,8 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let selectedImage = null;
     let lastMessageDate = null;
     let messageToDelete = null;
-    let reconnectAttempts = 0;
-    const MAX_RECONNECT_ATTEMPTS = 5;
+    let messageReactions = new Map(); // messageId -> {reaction: count}
     
     // Emoji data
     const emojiCategoriesData = [
@@ -123,7 +122,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (usernameError) {
             usernameError.textContent = message;
             usernameError.classList.add('show');
-            console.log("Error shown:", message);
         }
     }
     
@@ -239,12 +237,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // ==================== EMOJI PICKER FUNCTIONS ====================
     
     function initEmojiPicker() {
-        if (!emojiCategories || !emojiGrid) {
-            console.log("Emoji picker elements not found");
-            return;
-        }
-        
-        console.log("Initializing emoji picker...");
+        if (!emojiCategories || !emojiGrid) return;
         
         // Create category buttons
         emojiCategoriesData.forEach((category, index) => {
@@ -274,8 +267,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
         }
-        
-        console.log("Emoji picker initialized");
     }
     
     function loadEmojiCategory(categoryIndex) {
@@ -337,19 +328,14 @@ document.addEventListener('DOMContentLoaded', function() {
         
         messageInput.dispatchEvent(new Event('input'));
         
-        // Close emoji picker
         if (emojiPicker) {
             emojiPicker.classList.add('hidden');
         }
     }
     
     function toggleEmojiPicker() {
-        if (!emojiPicker) {
-            console.log("Emoji picker element not found");
-            return;
-        }
+        if (!emojiPicker) return;
         
-        console.log("Toggling emoji picker");
         emojiPicker.classList.toggle('hidden');
         
         if (!emojiPicker.classList.contains('hidden') && emojiSearch) {
@@ -494,106 +480,25 @@ document.addEventListener('DOMContentLoaded', function() {
         document.body.style.overflow = 'auto';
     }
     
-    function deleteOwnMessage(messageId) {
-        if (!socket || !isConnected) return;
+    function deleteMessage() {
+        if (!socket || !isConnected || !messageToDelete) return;
+        
+        console.log('Deleting message:', messageToDelete);
         
         // Emit delete event to server
-        socket.emit('delete-message', { messageId: messageId });
-        
-        // Remove from UI immediately
-        const messageElement = messagesContainer.querySelector(`[data-message-id="${messageId}"]`);
-        if (messageElement) {
-            messageElement.remove();
-        }
+        socket.emit('delete-message', { messageId: messageToDelete });
         
         hideDeleteModal();
-        showSystemMessage('Message deleted');
     }
     
-    // ==================== MESSAGE FUNCTIONS ====================
+    // ==================== REACTION FUNCTIONS ====================
     
-    function addMessage(data, isSent) {
-        if (!messagesContainer) return;
-        
-        const messageWrapper = document.createElement('div');
-        messageWrapper.className = `message-wrapper ${isSent ? 'sent' : 'received'}`;
-        messageWrapper.dataset.messageId = data.id || 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        
-        let messageHTML = `
-            <div class="message ${isSent ? 'sent' : 'received'}">
-                <div class="message-header">
-                    <span class="message-username">${escapeHtml(data.username)}</span>
-                    <span class="message-time">${formatTimestamp(data.timestamp || Date.now())}</span>
-                </div>
-                <div class="message-content">
-        `;
-        
-        if (data.type === 'image' && data.imageData) {
-            messageHTML += `
-                <div class="image-message">
-                    <img src="${data.imageData}" alt="Sent image" loading="lazy">
-                    ${data.message ? `<div class="image-caption">${escapeHtml(data.message)}</div>` : ''}
-                </div>
-            `;
-        } else {
-            messageHTML += escapeHtml(data.message || '');
-        }
-        
-        messageHTML += `
-                </div>
-            </div>
-            <div class="message-actions">
-                <button class="action-btn reply-btn" title="Reply">
-                    <i class="fas fa-reply"></i>
-                </button>
-                <button class="action-btn react-btn" title="React">
-                    <i class="fas fa-smile"></i>
-                </button>
-                ${isSent ? `<button class="action-btn delete-btn" title="Delete">
-                    <i class="fas fa-trash-alt"></i>
-                </button>` : ''}
-            </div>
-        `;
-        
-        messageWrapper.innerHTML = messageHTML;
-        messagesContainer.appendChild(messageWrapper);
-        
-        // Add event listeners
-        const replyBtn = messageWrapper.querySelector('.reply-btn');
-        if (replyBtn) {
-            replyBtn.addEventListener('click', () => replyToMessage(messageWrapper.dataset.messageId));
-        }
-        
-        const reactBtn = messageWrapper.querySelector('.react-btn');
-        if (reactBtn) {
-            reactBtn.addEventListener('click', () => showReactionMenu(messageWrapper.dataset.messageId));
-        }
-        
-        const deleteBtn = messageWrapper.querySelector('.delete-btn');
-        if (deleteBtn) {
-            deleteBtn.addEventListener('click', () => showDeleteModal(messageWrapper.dataset.messageId));
-        }
-        
-        const imageMessage = messageWrapper.querySelector('.image-message');
-        if (imageMessage) {
-            imageMessage.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const img = imageMessage.querySelector('img');
-                if (img) {
-                    openImageModal(img.src);
-                }
-            });
-        }
-        
-        scrollToBottom();
-    }
-    
-    function showReactionMenu(messageId) {
+    function showReactionMenu(messageId, event) {
         const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '😠'];
         const menu = document.createElement('div');
         menu.className = 'reaction-menu';
         menu.style.cssText = `
-            position: absolute;
+            position: fixed;
             background: white;
             border-radius: 24px;
             padding: 4px;
@@ -618,43 +523,245 @@ document.addEventListener('DOMContentLoaded', function() {
             btn.onmouseover = () => btn.style.transform = 'scale(1.3)';
             btn.onmouseout = () => btn.style.transform = 'scale(1)';
             btn.onclick = () => {
-                // React to message
+                // Send reaction to server
                 if (socket && isConnected) {
                     socket.emit('message-reaction', {
                         messageId: messageId,
                         reaction: emoji
                     });
+                    console.log('Sent reaction:', emoji, 'for message:', messageId);
                 }
                 document.body.removeChild(menu);
             };
             menu.appendChild(btn);
         });
         
-        const reactBtn = document.querySelector(`[data-message-id="${messageId}"] .react-btn`);
-        if (reactBtn) {
-            const rect = reactBtn.getBoundingClientRect();
-            menu.style.top = `${rect.top - 50}px`;
-            menu.style.left = `${rect.left}px`;
-            document.body.appendChild(menu);
-            
-            setTimeout(() => {
-                const removeMenu = (e) => {
-                    if (!menu.contains(e.target) && e.target !== reactBtn) {
-                        document.body.removeChild(menu);
-                        document.removeEventListener('click', removeMenu);
-                    }
-                };
-                document.addEventListener('click', removeMenu);
-            }, 100);
+        // Position menu near the click
+        const rect = event.target.getBoundingClientRect();
+        menu.style.top = `${rect.top - 50}px`;
+        menu.style.left = `${rect.left}px`;
+        document.body.appendChild(menu);
+        
+        // Remove menu after click outside
+        setTimeout(() => {
+            const removeMenu = (e) => {
+                if (!menu.contains(e.target)) {
+                    document.body.removeChild(menu);
+                    document.removeEventListener('click', removeMenu);
+                }
+            };
+            document.addEventListener('click', removeMenu);
+        }, 100);
+    }
+    
+    function updateMessageReaction(messageId, reaction, username, reactions) {
+        const messageElement = messagesContainer.querySelector(`[data-message-id="${messageId}"]`);
+        if (!messageElement) return;
+        
+        let reactionsContainer = messageElement.querySelector('.reactions-container');
+        if (!reactionsContainer) {
+            reactionsContainer = document.createElement('div');
+            reactionsContainer.className = 'reactions-container';
+            messageElement.querySelector('.message').appendChild(reactionsContainer);
         }
+        
+        // Update local reactions
+        messageReactions.set(messageId, reactions || {});
+        
+        // Clear and rebuild reactions
+        reactionsContainer.innerHTML = '';
+        
+        if (reactions && Object.keys(reactions).length > 0) {
+            Object.entries(reactions).forEach(([reactionEmoji, users]) => {
+                if (users.length > 0) {
+                    const reactionElement = document.createElement('div');
+                    reactionElement.className = 'reaction';
+                    reactionElement.innerHTML = `
+                        <span class="reaction-emoji">${reactionEmoji}</span>
+                        <span class="reaction-count">${users.length}</span>
+                    `;
+                    reactionElement.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (socket && isConnected) {
+                            socket.emit('message-reaction', {
+                                messageId: messageId,
+                                reaction: reactionEmoji
+                            });
+                        }
+                    });
+                    reactionsContainer.appendChild(reactionElement);
+                }
+            });
+        }
+    }
+    
+    // ==================== MESSAGE FUNCTIONS ====================
+    
+    function addMessage(data, isSent) {
+        if (!messagesContainer) return;
+        
+        const messageWrapper = document.createElement('div');
+        messageWrapper.className = `message-wrapper ${isSent ? 'sent' : 'received'}`;
+        messageWrapper.dataset.messageId = data.id;
+        
+        let messageHTML = `
+            <div class="message ${isSent ? 'sent' : 'received'}">
+                <div class="message-header">
+                    <span class="message-username">${escapeHtml(data.username)}</span>
+                    <span class="message-time">${formatTimestamp(data.timestamp)}</span>
+                </div>
+        `;
+        
+        // Add reply preview if replying to another message
+        if (data.replyTo) {
+            const repliedMessage = messagesContainer.querySelector(`[data-message-id="${data.replyTo}"]`);
+            if (repliedMessage) {
+                const repliedContent = repliedMessage.querySelector('.message-content');
+                const repliedUsername = repliedMessage.querySelector('.message-username').textContent;
+                let previewText = repliedContent.textContent.substring(0, 50);
+                if (repliedContent.textContent.length > 50) previewText += '...';
+                
+                messageHTML += `
+                    <div class="reply-preview" data-reply-to="${data.replyTo}">
+                        <div class="reply-sender">${escapeHtml(repliedUsername)}</div>
+                        <div class="reply-content">${escapeHtml(previewText)}</div>
+                    </div>
+                `;
+            }
+        }
+        
+        // Add message content
+        messageHTML += `<div class="message-content">`;
+        
+        if (data.type === 'image' && data.imageData) {
+            messageHTML += `
+                <div class="image-message">
+                    <img src="${data.imageData}" alt="Sent image" loading="lazy">
+                    ${data.message ? `<div class="image-caption">${escapeHtml(data.message)}</div>` : ''}
+                </div>
+            `;
+        } else {
+            messageHTML += escapeHtml(data.message || '');
+        }
+        
+        messageHTML += `</div>`;
+        
+        // Add reactions if any
+        if (data.reactions && Object.keys(data.reactions).length > 0) {
+            messageHTML += `<div class="reactions-container">`;
+            Object.entries(data.reactions).forEach(([reaction, users]) => {
+                if (users.length > 0) {
+                    messageHTML += `
+                        <div class="reaction" data-reaction="${reaction}">
+                            <span class="reaction-emoji">${reaction}</span>
+                            <span class="reaction-count">${users.length}</span>
+                        </div>
+                    `;
+                }
+            });
+            messageHTML += `</div>`;
+        }
+        
+        messageHTML += `</div>`;
+        
+        // Add message actions (only if not system message)
+        if (data.username !== 'System') {
+            messageHTML += `
+                <div class="message-actions">
+                    <button class="action-btn reply-btn" title="Reply">
+                        <i class="fas fa-reply"></i>
+                    </button>
+                    <button class="action-btn react-btn" title="React">
+                        <i class="fas fa-smile"></i>
+                    </button>
+                    ${isSent ? `<button class="action-btn delete-btn" title="Delete">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>` : ''}
+                </div>
+            `;
+        }
+        
+        messageWrapper.innerHTML = messageHTML;
+        messagesContainer.appendChild(messageWrapper);
+        
+        // Store reactions
+        if (data.reactions) {
+            messageReactions.set(data.id, data.reactions);
+        }
+        
+        // Add event listeners
+        if (data.username !== 'System') {
+            const replyBtn = messageWrapper.querySelector('.reply-btn');
+            if (replyBtn) {
+                replyBtn.addEventListener('click', () => replyToMessage(data.id));
+            }
+            
+            const reactBtn = messageWrapper.querySelector('.react-btn');
+            if (reactBtn) {
+                reactBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    showReactionMenu(data.id, e);
+                });
+            }
+            
+            const deleteBtn = messageWrapper.querySelector('.delete-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', () => {
+                    console.log('Delete button clicked for message:', data.id);
+                    showDeleteModal(data.id);
+                });
+            }
+            
+            // Add click handlers for reactions
+            const reactionElements = messageWrapper.querySelectorAll('.reaction');
+            reactionElements.forEach(reactionEl => {
+                reactionEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const reaction = reactionEl.dataset.reaction;
+                    if (socket && isConnected) {
+                        socket.emit('message-reaction', {
+                            messageId: data.id,
+                            reaction: reaction
+                        });
+                    }
+                });
+            });
+        }
+        
+        const replyPreview = messageWrapper.querySelector('.reply-preview');
+        if (replyPreview) {
+            replyPreview.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const messageId = replyPreview.dataset.replyTo;
+                const targetMessage = messagesContainer.querySelector(`[data-message-id="${messageId}"]`);
+                if (targetMessage) {
+                    targetMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    targetMessage.classList.add('selected');
+                    setTimeout(() => {
+                        targetMessage.classList.remove('selected');
+                    }, 2000);
+                }
+            });
+        }
+        
+        const imageMessage = messageWrapper.querySelector('.image-message');
+        if (imageMessage) {
+            imageMessage.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const img = imageMessage.querySelector('img');
+                if (img) {
+                    openImageModal(img.src);
+                }
+            });
+        }
+        
+        scrollToBottom();
     }
     
     // ==================== USER LIST FUNCTIONS ====================
     
     function updateUsersList(users) {
         if (!usersListDiv) return;
-        
-        console.log('Updating users list with:', users);
         
         usersListDiv.innerHTML = '';
         
@@ -663,7 +770,7 @@ document.addEventListener('DOMContentLoaded', function() {
             emptyMsg.className = 'user-item';
             emptyMsg.innerHTML = '<i class="fas fa-user-friends"></i> <span>No other users online</span>';
             usersListDiv.appendChild(emptyMsg);
-            updateOnlineCount(1); // Just yourself
+            updateOnlineCount(1);
         } else {
             // Filter out current user
             const otherUsers = users.filter(u => u.username !== currentUsername);
@@ -678,7 +785,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     const userDiv = document.createElement('div');
                     userDiv.className = 'user-item';
                     
-                    // Calculate how long user has been online
                     const joinTime = new Date(user.joinedAt || Date.now());
                     const now = new Date();
                     const diffMs = now - joinTime;
@@ -729,41 +835,24 @@ document.addEventListener('DOMContentLoaded', function() {
         // Check for existing session
         const session = loadUserSession();
         if (session && session.username === username) {
-            // Try to reconnect with existing session
+            // Use existing session
             currentUserId = session.userId;
-            console.log('Attempting reconnection with session:', session);
-            
-            if (!socket) {
-                connectSocket();
-            }
-            
-            // Give time for socket connection
-            setTimeout(() => {
-                if (socket && socket.connected) {
-                    socket.emit('user-reconnect', {
-                        username: username,
-                        userId: currentUserId
-                    });
-                } else {
-                    // Fall back to regular join
-                    socket.emit('user-join', username);
-                }
-            }, 500);
-        } else {
-            // New join
-            if (!socket) {
-                connectSocket();
-            }
-            
-            setTimeout(() => {
-                if (socket && socket.connected) {
-                    socket.emit('user-join', username);
-                } else {
-                    showError('Could not connect to server. Please refresh and try again.');
-                    enableJoinButton();
-                }
-            }, 500);
+            console.log('Using existing session:', session);
         }
+        
+        if (!socket) {
+            connectSocket();
+        }
+        
+        // Give time for socket connection
+        setTimeout(() => {
+            if (socket && socket.connected) {
+                socket.emit('user-join', username);
+            } else {
+                showError('Could not connect to server. Please refresh and try again.');
+                enableJoinButton();
+            }
+        }, 500);
     }
     
     function leaveChat() {
@@ -792,8 +881,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         updateConnectionStatus(false);
         enableJoinButton();
-        
-        console.log("Left chat and cleared session");
     }
     
     function sendMessage() {
@@ -838,8 +925,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (socket && isConnected) {
             socket.emit('typing', false);
         }
-        
-        console.log("Message sent:", messageData);
     }
     
     function handleMessageKeypress(e) {
@@ -873,9 +958,8 @@ document.addEventListener('DOMContentLoaded', function() {
         socket = io(`${protocol}//${host}`, {
             transports: ['websocket', 'polling'],
             reconnection: true,
-            reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
+            reconnectionAttempts: 5,
             reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
             timeout: 10000
         });
 
@@ -883,34 +967,13 @@ document.addEventListener('DOMContentLoaded', function() {
         socket.on('connect', () => {
             console.log('✅ Connected to server');
             isConnected = true;
-            reconnectAttempts = 0;
             updateConnectionStatus(true);
-            
-            // Send periodic activity updates
-            setInterval(() => {
-                if (socket.connected && currentUsername) {
-                    socket.emit('user-active');
-                }
-            }, 30000); // Every 30 seconds
         });
 
-        socket.on('disconnect', (reason) => {
-            console.log('❌ Disconnected:', reason);
+        socket.on('disconnect', () => {
+            console.log('❌ Disconnected');
             isConnected = false;
             updateConnectionStatus(false);
-            
-            // Try to reconnect if it wasn't a manual leave
-            if (currentUsername && reason !== 'io client disconnect') {
-                reconnectAttempts++;
-                if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
-                    console.log(`Reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
-                    setTimeout(() => {
-                        if (!socket.connected && currentUsername) {
-                            socket.connect();
-                        }
-                    }, 2000);
-                }
-            }
         });
 
         socket.on('connect_error', (error) => {
@@ -925,7 +988,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         socket.on('user-joined', (data) => {
             currentUsername = data.username;
-            currentUserId = data.userId || data.username;
+            currentUserId = data.userId;
             
             // Save session
             saveUserSession(currentUsername, currentUserId);
@@ -940,26 +1003,6 @@ document.addEventListener('DOMContentLoaded', function() {
             showSystemMessage(`Welcome to the chat, ${currentUsername}! There are ${data.onlineCount || 0} users online.`);
             
             enableJoinButton();
-            
-            console.log("User joined successfully:", data);
-        });
-
-        socket.on('reconnect-success', (data) => {
-            currentUsername = data.username;
-            currentUserId = data.userId;
-            
-            if (currentUserSpan) {
-                currentUserSpan.textContent = currentUsername;
-            }
-            if (loginScreen) loginScreen.classList.add('hidden');
-            if (chatScreen) chatScreen.classList.remove('hidden');
-            if (messageInput) messageInput.focus();
-            
-            showSystemMessage(`Welcome back, ${currentUsername}! Reconnected successfully. ${data.onlineCount || 0} users online.`);
-            
-            enableJoinButton();
-            
-            console.log("Reconnected successfully:", data);
         });
 
         socket.on('user-connected', (data) => {
@@ -974,50 +1017,28 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.userCount !== undefined) {
                 updateOnlineCount(data.userCount);
             }
-            
-            // Remove from users list
-            if (usersListDiv) {
-                const userElements = usersListDiv.querySelectorAll('.user-item');
-                userElements.forEach(userEl => {
-                    if (userEl.querySelector('span').textContent === data.username) {
-                        userEl.remove();
-                    }
-                });
-            }
         });
 
         socket.on('users-list', (users) => {
-            console.log('Received users list:', users);
             updateUsersList(users);
         });
 
         socket.on('message-history', (history) => {
             if (!messagesContainer) return;
             
-            console.log('Received message history:', history?.length || 0, 'messages');
-            
             messagesContainer.innerHTML = '';
+            messageReactions.clear();
             
             if (history && history.length > 0) {
                 history.forEach(msg => {
                     addMessage(msg, msg.username === currentUsername);
                 });
                 scrollToBottom();
-            } else {
-                const welcomeMsg = document.createElement('div');
-                welcomeMsg.className = 'welcome-message';
-                welcomeMsg.innerHTML = `
-                    <i class="fas fa-comment-alt"></i>
-                    <h2>Welcome to Self-Hosted Chat</h2>
-                    <p>No messages yet. Start the conversation!</p>
-                `;
-                messagesContainer.appendChild(welcomeMsg);
             }
         });
 
         socket.on('receive-message', (data) => {
             addMessage(data, data.username === currentUsername);
-            scrollToBottom();
         });
 
         socket.on('user-typing', (data) => {
@@ -1034,17 +1055,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const messageElement = messagesContainer.querySelector(`[data-message-id="${data.messageId}"]`);
             if (messageElement) {
                 messageElement.remove();
-                showSystemMessage(`A message was deleted by ${data.deletedBy}`);
+                messageReactions.delete(data.messageId);
+                showSystemMessage(`Message deleted by ${data.deletedBy}`);
             }
         });
 
         socket.on('update-reaction', (data) => {
-            // Handle reaction updates
-            const messageElement = messagesContainer.querySelector(`[data-message-id="${data.messageId}"]`);
-            if (messageElement) {
-                // Add reaction UI here
-                console.log('Reaction update:', data);
-            }
+            updateMessageReaction(data.messageId, data.reaction, data.username, data.reactions);
         });
     }
     
@@ -1054,7 +1071,6 @@ document.addEventListener('DOMContentLoaded', function() {
         // Login events
         if (joinBtn) {
             joinBtn.addEventListener('click', joinChat);
-            console.log("Join button event listener added");
         }
         
         if (usernameInput) {
@@ -1076,7 +1092,6 @@ document.addEventListener('DOMContentLoaded', function() {
         // Feature events
         if (emojiBtn) {
             emojiBtn.addEventListener('click', toggleEmojiPicker);
-            console.log("Emoji button event listener added");
         }
         
         if (imageBtn) imageBtn.addEventListener('click', triggerImageUpload);
@@ -1090,11 +1105,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         if (confirmDeleteBtn) {
-            confirmDeleteBtn.addEventListener('click', () => {
-                if (messageToDelete) {
-                    deleteOwnMessage(messageToDelete);
-                }
-            });
+            confirmDeleteBtn.addEventListener('click', deleteMessage);
         }
         
         // Close modals on click outside
@@ -1141,22 +1152,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 usernameInput.value = session.username;
                 usernameInput.dispatchEvent(new Event('input'));
             }
-            
-            // Auto-join after a short delay
-            setTimeout(() => {
-                if (usernameInput && usernameInput.value === session.username) {
-                    joinChat();
-                }
-            }, 500);
         }
         
         setupEventListeners();
         initEmojiPicker();
         initImageInput();
         
-        if (usernameInput && !session) {
-            usernameInput.focus();
-        }
+        if (usernameInput) usernameInput.focus();
         
         // Add CSS animations
         const style = document.createElement('style');
@@ -1167,7 +1169,6 @@ document.addEventListener('DOMContentLoaded', function() {
             @keyframes spin { 100% { transform: rotate(360deg); } }
             .connected i { color: #28a745 !important; }
             .disconnected i { color: #dc3545 !important; }
-            .user-item small { opacity: 0.7; }
             .typing-dots { display: inline-flex; gap: 2px; margin-left: 4px; }
             .typing-dots span { width: 4px; height: 4px; background: #65676b; border-radius: 50%; animation: typing 1.4s infinite; }
             .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
@@ -1188,7 +1189,7 @@ window.addEventListener('error', function(e) {
     console.error('Global error:', e.message, 'at', e.filename, ':', e.lineno);
 });
 
-// Make openImageModal available globally
+// Make functions available globally
 window.openImageModal = function(imageSrc) {
     document.getElementById('modal-image').src = imageSrc;
     document.getElementById('image-modal').classList.remove('hidden');
