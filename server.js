@@ -10,11 +10,11 @@ const io = socketIo(server);
 // Store active users
 const users = new Map();
 
-// Serve static files
+// Serve static files from 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Basic route
-app.get('/', (req, res) => {
+// Handle all routes by serving index.html (for SPA)
+app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -89,8 +89,11 @@ io.on('connection', (socket) => {
   });
 });
 
-// Start server
+// Start server - IMPORTANT: Use 0.0.0.0 for Render
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+const HOST = '0.0.0.0';
+
+server.listen(PORT, HOST, () => {
+  console.log(`Server running on http://${HOST}:${PORT}`);
+  console.log(`Public directory: ${path.join(__dirname, 'public')}`);
 });
