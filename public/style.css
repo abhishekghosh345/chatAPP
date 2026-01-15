@@ -1116,3 +1116,6 @@ body {
 .welcome-animation p {
     color: var(--secondary-color);
 }
+.hidden {
+    display: none !important;
+}
