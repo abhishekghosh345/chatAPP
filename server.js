@@ -8,9 +8,9 @@ const server = http.createServer(app);
 const io = socketIo(server);
 
 // Store active users and messages
-const users = new Map(); // socket.id -> {username, userId, socketId, joinedAt}
+const users = new Map(); // socket.id -> {username, userId, socketId}
 const messages = []; // Array of all messages
-const userSessions = new Map(); // username -> {socketId, lastActive}
+const messageReactions = new Map(); // messageId -> {reaction: [usernames]}
 
 // Increase payload limit for images
 app.use(express.json({ limit: '10mb' }));
@@ -24,7 +24,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Health check for Render
+// Health check
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
@@ -51,12 +51,21 @@ function generateUserId() {
   return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
+// Generate unique message ID
+function generateMessageId() {
+  return 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
 // Handle socket connections
 io.on('connection', (socket) => {
-  console.log('New socket connection:', socket.id);
-  
-  // Send message history (last 100 messages)
-  socket.emit('message-history', messages.slice(-100));
+  console.log('New connection:', socket.id);
+
+  // Send message history and reactions
+  const historyWithReactions = messages.map(msg => ({
+    ...msg,
+    reactions: messageReactions.get(msg.id) || {}
+  }));
+  socket.emit('message-history', historyWithReactions.slice(-100));
 
   // Listen for new user joining
   socket.on('user-join', (username) => {
@@ -70,22 +79,20 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Generate or retrieve user ID
-    let userId = userSessions.get(sanitizedUsername)?.userId || generateUserId();
+    // Generate user ID
+    const userId = generateUserId();
     
     // Store user info
     const userInfo = {
       username: sanitizedUsername,
       userId: userId,
       socketId: socket.id,
-      joinedAt: Date.now(),
-      lastActive: Date.now()
+      joinedAt: Date.now()
     };
     
     users.set(socket.id, userInfo);
-    userSessions.set(sanitizedUsername, { userId, socketId: socket.id, lastActive: Date.now() });
     
-    console.log(`User joined: ${sanitizedUsername} (${socket.id})`);
+    console.log(`User joined: ${sanitizedUsername} (${userId})`);
     
     // Notify the user who joined
     socket.emit('user-joined', {
@@ -103,7 +110,7 @@ io.on('connection', (socket) => {
       userCount: users.size
     });
 
-    // Send current users list to ALL users (including the new one)
+    // Send current users list to ALL users
     const userList = Array.from(users.values()).map(u => ({
       username: u.username,
       userId: u.userId,
@@ -114,7 +121,7 @@ io.on('connection', (socket) => {
     
     // Send welcome message
     const welcomeMessage = {
-      id: Date.now() + '_welcome',
+      id: generateMessageId(),
       username: 'System',
       message: `${sanitizedUsername} has joined the chat!`,
       timestamp: Date.now(),
@@ -123,49 +130,6 @@ io.on('connection', (socket) => {
     
     messages.push(welcomeMessage);
     io.emit('receive-message', welcomeMessage);
-  });
-
-  // Handle reconnection with user ID
-  socket.on('user-reconnect', (data) => {
-    const { username, userId } = data;
-    
-    // Check if user exists in sessions
-    const session = userSessions.get(username);
-    if (session && session.userId === userId) {
-      // Update socket ID
-      session.socketId = socket.id;
-      session.lastActive = Date.now();
-      
-      // Update users map
-      const userInfo = {
-        username: username,
-        userId: userId,
-        socketId: socket.id,
-        joinedAt: Date.now(),
-        lastActive: Date.now()
-      };
-      
-      users.set(socket.id, userInfo);
-      
-      // Send reconnection success
-      socket.emit('reconnect-success', {
-        username: username,
-        userId: userId,
-        messageCount: messages.length,
-        onlineCount: users.size
-      });
-      
-      // Update user list for everyone
-      const userList = Array.from(users.values()).map(u => ({
-        username: u.username,
-        userId: u.userId,
-        joinedAt: u.joinedAt
-      }));
-      
-      io.emit('users-list', userList);
-      
-      console.log(`User reconnected: ${username} (${socket.id})`);
-    }
   });
 
   // Handle incoming messages
@@ -177,7 +141,7 @@ io.on('connection', (socket) => {
     }
     
     const messageData = {
-      id: Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+      id: generateMessageId(),
       username: user.username,
       userId: user.userId,
       message: data.message,
@@ -196,7 +160,7 @@ io.on('connection', (socket) => {
     // Store message
     messages.push(messageData);
     
-    // Keep only last 500 messages to prevent memory issues
+    // Keep only last 500 messages
     if (messages.length > 500) {
       messages.shift();
     }
@@ -223,12 +187,45 @@ io.on('connection', (socket) => {
     const user = users.get(socket.id);
     if (!user) return;
     
+    const { messageId, reaction } = data;
+    
+    // Initialize reactions for this message if not exists
+    if (!messageReactions.has(messageId)) {
+      messageReactions.set(messageId, {});
+    }
+    
+    const reactions = messageReactions.get(messageId);
+    
+    // Initialize this reaction if not exists
+    if (!reactions[reaction]) {
+      reactions[reaction] = [];
+    }
+    
+    // Add user to reaction if not already there
+    if (!reactions[reaction].includes(user.username)) {
+      reactions[reaction].push(user.username);
+    } else {
+      // Remove user if already reacted (toggle)
+      reactions[reaction] = reactions[reaction].filter(u => u !== user.username);
+      // Remove reaction if empty
+      if (reactions[reaction].length === 0) {
+        delete reactions[reaction];
+      }
+    }
+    
+    // Update reactions
+    messageReactions.set(messageId, reactions);
+    
+    // Broadcast updated reaction
     io.emit('update-reaction', {
-      messageId: data.messageId,
-      reaction: data.reaction,
+      messageId: messageId,
+      reaction: reaction,
       username: user.username,
-      userId: user.userId
+      userId: user.userId,
+      reactions: reactions
     });
+    
+    console.log(`Reaction ${reaction} on message ${messageId} by ${user.username}`);
   });
 
   // Handle message deletion
@@ -236,23 +233,28 @@ io.on('connection', (socket) => {
     const user = users.get(socket.id);
     if (!user) return;
     
+    const { messageId } = data;
+    
     // Find the message
-    const messageIndex = messages.findIndex(msg => msg.id === data.messageId);
+    const messageIndex = messages.findIndex(msg => msg.id === messageId);
     if (messageIndex !== -1) {
-      // Check if user owns the message (by userId)
+      // Check if user owns the message
       if (messages[messageIndex].userId === user.userId) {
         // Remove from array
         const deletedMessage = messages.splice(messageIndex, 1)[0];
         
+        // Remove reactions for this message
+        messageReactions.delete(messageId);
+        
         // Notify all clients
         io.emit('message-deleted', {
-          messageId: data.messageId,
+          messageId: messageId,
           deletedBy: user.username
         });
         
         // Send deletion notification
         const deletionMessage = {
-          id: Date.now() + '_deletion',
+          id: generateMessageId(),
           username: 'System',
           message: `${user.username} deleted a message`,
           timestamp: Date.now(),
@@ -262,32 +264,20 @@ io.on('connection', (socket) => {
         messages.push(deletionMessage);
         io.emit('receive-message', deletionMessage);
         
-        console.log(`Message ${data.messageId} deleted by ${user.username}`);
+        console.log(`Message ${messageId} deleted by ${user.username}`);
+      } else {
+        console.log(`User ${user.username} tried to delete message they don't own`);
       }
-    }
-  });
-
-  // Handle user activity
-  socket.on('user-active', () => {
-    const user = users.get(socket.id);
-    if (user) {
-      user.lastActive = Date.now();
-      userSessions.get(user.username).lastActive = Date.now();
+    } else {
+      console.log(`Message ${messageId} not found for deletion`);
     }
   });
 
   // Handle disconnection
-  socket.on('disconnect', (reason) => {
+  socket.on('disconnect', () => {
     const user = users.get(socket.id);
     if (user) {
       users.delete(socket.id);
-      
-      // Update last active time but keep in sessions for reconnection
-      const session = userSessions.get(user.username);
-      if (session) {
-        session.lastActive = Date.now();
-        session.socketId = null; // Clear socket ID but keep user data
-      }
       
       // Notify all users
       io.emit('user-disconnected', {
@@ -306,35 +296,9 @@ io.on('connection', (socket) => {
       
       io.emit('users-list', userList);
       
-      console.log(`User disconnected: ${user.username} (${socket.id}), Reason: ${reason}`);
-      
-      // Remove from sessions if inactive for too long (30 minutes)
-      setTimeout(() => {
-        const oldSession = userSessions.get(user.username);
-        if (oldSession && Date.now() - oldSession.lastActive > 30 * 60 * 1000) {
-          userSessions.delete(user.username);
-          console.log(`Removed inactive session for ${user.username}`);
-        }
-      }, 30 * 60 * 1000);
+      console.log(`User disconnected: ${user.username} (${user.userId})`);
     }
   });
-
-  // Periodic cleanup of old messages
-  setInterval(() => {
-    const oneHourAgo = Date.now() - (60 * 60 * 1000);
-    const oldCount = messages.length;
-    
-    // Keep messages from last 24 hours only
-    const recentMessages = messages.filter(msg => 
-      msg.type === 'system' || (Date.now() - msg.timestamp < 24 * 60 * 60 * 1000)
-    );
-    
-    if (recentMessages.length < messages.length) {
-      messages.length = 0;
-      messages.push(...recentMessages);
-      console.log(`Cleaned up ${oldCount - messages.length} old messages`);
-    }
-  }, 30 * 60 * 1000); // Run every 30 minutes
 });
 
 // Start server
@@ -344,6 +308,5 @@ const HOST = '0.0.0.0';
 server.listen(PORT, HOST, () => {
   console.log(`✅ Server running on http://${HOST}:${PORT}`);
   console.log(`📁 Serving files from: ${path.join(__dirname, 'public')}`);
-  console.log(`🚀 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`💾 Memory: Users: ${users.size}, Messages: ${messages.length}, Sessions: ${userSessions.size}`);
+  console.log(`💾 Memory: Users: ${users.size}, Messages: ${messages.length}`);
 });
