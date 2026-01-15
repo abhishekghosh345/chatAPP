@@ -158,3 +158,101 @@ server.listen(PORT, HOST, () => {
   console.log(`✅ Server running on http://${HOST}:${PORT}`);
   console.log(`📁 Serving files from: ${path.join(__dirname, 'public')}`);
 });
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const path = require('path');
+
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);
+
+// Store active users and messages
+const users = new Map();
+const messages = [];
+
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Handle all routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', messageCount: messages.length, userCount: users.size });
+});
+
+// Socket.io connection
+io.on('connection', (socket) => {
+  console.log('User connected:', socket.id);
+  
+  // Send message history
+  socket.emit('message-history', messages.slice(-50));
+  
+  socket.on('user-join', (username) => {
+    users.set(socket.id, username);
+    socket.emit('user-joined', username);
+    socket.broadcast.emit('user-connected', username);
+    
+    // Send user list
+    const userList = Array.from(users.values());
+    socket.emit('users-list', userList);
+  });
+  
+  socket.on('send-message', (data) => {
+    const username = users.get(socket.id);
+    if (username) {
+      const messageData = {
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        username: username,
+        message: data.message,
+        timestamp: Date.now(),
+        type: data.type || 'text',
+        imageData: data.imageData || null
+      };
+      
+      messages.push(messageData);
+      
+      // Keep only last 100 messages
+      if (messages.length > 100) {
+        messages.shift();
+      }
+      
+      io.emit('receive-message', messageData);
+    }
+  });
+  
+  // Handle message deletion
+  socket.on('delete-message', (data) => {
+    const username = users.get(socket.id);
+    if (username) {
+      // Find and remove message
+      const messageIndex = messages.findIndex(msg => msg.id === data.messageId);
+      if (messageIndex !== -1) {
+        // Check if user owns the message
+        if (messages[messageIndex].username === username) {
+          messages.splice(messageIndex, 1);
+          // Notify all clients to remove the message
+          io.emit('message-deleted', { messageId: data.messageId });
+        }
+      }
+    }
+  });
+  
+  socket.on('disconnect', () => {
+    const username = users.get(socket.id);
+    if (username) {
+      users.delete(socket.id);
+      io.emit('user-disconnected', username);
+    }
+  });
+});
+
+const PORT = process.env.PORT || 3000;
+const HOST = '0.0.0.0';
+
+server.listen(PORT, HOST, () => {
+  console.log(`✅ Server running on http://${HOST}:${PORT}`);
+});
