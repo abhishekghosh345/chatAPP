@@ -52,29 +52,29 @@ document.addEventListener('DOMContentLoaded', function() {
     let selectedImage = null;
     let lastMessageDate = null;
     let messageToDelete = null;
-    let messageReactions = new Map(); // messageId -> {reaction: count}
+    let messageReactions = new Map(); // messageId -> {reaction: [usernames]}
     
     // Emoji data
     const emojiCategoriesData = [
         { 
             name: 'Smileys', 
-            emojis: ['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄'] 
+            emojis: ['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛']
         },
         { 
             name: 'People', 
-            emojis: ['👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤝', '🙏', '✍️', '💅', '🤳', '💪', '🦵', '🦶', '👂', '🦻', '👃', '🧠', '🦷', '🦴', '👀', '👁️', '👅', '👄', '👶', '🧒', '👦', '👧', '🧑', '👨', '👩', '🧔', '👨‍🦰', '👩‍🦰', '👨‍🦱', '👩‍🦱', '👨‍🦳', '👩‍🦳', '👨‍🦲', '👩‍🦲'] 
+            emojis: ['👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '👍', '👎', '✊', '👊']
         },
         { 
             name: 'Animals', 
-            emojis: ['🐵', '🐒', '🦍', '🦧', '🐶', '🐕', '🦮', '🐕‍🦺', '🐩', '🐺', '🦊', '🦝', '🐱', '🐈', '🐈‍⬛', '🦁', '🐯', '🐅', '🐆', '🐴', '🐎', '🦄', '🦓', '🦌', '🐮', '🐂', '🐃', '🐄', '🐷', '🐖', '🐗', '🐽', '🐏', '🐑', '🐐', '🐪', '🐫', '🦙', '🦒', '🐘', '🦏', '🦛', '🐭', '🐁', '🐀', '🐹', '🐰', '🐇', '🐿️', '🦔', '🦇', '🐻', '🐻‍❄️', '🐨', '🐼', '🦥', '🦦', '🦨', '🦘', '🦡'] 
+            emojis: ['🐵', '🐒', '🦍', '🦧', '🐶', '🐕', '🦮', '🐕‍🦺', '🐩', '🐺', '🦊', '🦝', '🐱', '🐈', '🐈‍⬛', '🦁', '🐯', '🐅', '🐆', '🐴', '🐎']
         },
         { 
             name: 'Food', 
-            emojis: ['🍏', '🍎', '🍐', '🍊', '🍋', '🍌', '🍉', '🍇', '🍓', '🫐', '🍈', '🍒', '🍑', '🥭', '🍍', '🥥', '🥝', '🍅', '🍆', '🥑', '🥦', '🥬', '🥒', '🌶️', '🫑', '🌽', '🥕', '🫒', '🧄', '🧅', '🥔', '🍠', '🫘', '🥐', '🥯', '🍞', '🥖', '🥨', '🧀', '🥚', '🍳', '🧈', '🥞', '🧇', '🥓', '🥩', '🍗', '🍖', '🦴', '🌭', '🍔', '🍟', '🍕', '🫓', '🥪', '🥙', '🧆', '🌮', '🌯', '🫔', '🥗', '🥘', '🫕', '🥫', '🍝', '🍜', '🍲', '🍛', '🍣', '🍱', '🥟', '🦪', '🍤', '🍙', '🍚', '🍘', '🍥', '🥠', '🥮', '🍢', '🍡', '🍧', '🍨', '🍦', '🥧', '🧁', '🍰', '🎂', '🍮', '🍭', '🍬', '🍫', '🍿', '🍩', '🍪', '🌰', '🥜', '🫘', '🍯'] 
+            emojis: ['🍏', '🍎', '🍐', '🍊', '🍋', '🍌', '🍉', '🍇', '🍓', '🫐', '🍈', '🍒', '🍑', '🥭', '🍍', '🥥', '🥝', '🍅', '🍆', '🥑', '🥦']
         },
         { 
             name: 'Symbols', 
-            emojis: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❤️‍🔥', '❤️‍🩹', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️', '✝️', '☪️', '🕉️', '☸️', '✡️', '🔯', '🕎', '☯️', '☦️', '🛐', '⛎', '♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓', '🆔', '⚛️', '🉑', '☢️', '☣️', '📴', '📳', '🈶', '🈚', '🈸', '🈺', '🈷️', '✴️', '🆚', '💮', '🉐', '㊙️', '㊗️', '🈴', '🈵', '🈹', '🈲', '🅰️', '🅱️', '🆎', '🆑', '🅾️', '🆘', '❌', '⭕', '🛑', '⛔', '📛', '🚫', '💯', '💢', '♨️', '🚷', '🚯', '🚳', '🚱', '🔞', '📵', '🚭'] 
+            emojis: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝']
         }
     ];
     
@@ -481,12 +481,24 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function deleteMessage() {
-        if (!socket || !isConnected || !messageToDelete) return;
+        if (!messageToDelete) return;
         
         console.log('Deleting message:', messageToDelete);
         
-        // Emit delete event to server
-        socket.emit('delete-message', { messageId: messageToDelete });
+        const messageElement = messagesContainer ? messagesContainer.querySelector(`[data-message-id="${messageToDelete}"]`) : null;
+        
+        // If connected, ask server to delete. If not connected, do a local (optimistic) delete so UX isn't blocked.
+        if (socket && isConnected) {
+            socket.emit('delete-message', { messageId: messageToDelete });
+        } else {
+            if (messageElement) {
+                messageElement.remove();
+                messageReactions.delete(messageToDelete);
+                showSystemMessage('Message deleted (offline). It will be synced when reconnected.');
+            } else {
+                showSystemMessage('Message removed locally.');
+            }
+        }
         
         hideDeleteModal();
     }
@@ -554,6 +566,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     messageId: messageId,
                     reaction: emoji
                 });
+            } else {
+                // Local optimistic toggle if offline
+                const existing = messageReactions.get(messageId) || {};
+                const users = existing[emoji] || [];
+                const idx = users.indexOf(currentUsername);
+                if (idx === -1) users.push(currentUsername);
+                else users.splice(idx, 1);
+                existing[emoji] = users;
+                messageReactions.set(messageId, existing);
+                updateMessageReaction(messageId, null, null, existing);
             }
             
             // Close this menu
@@ -635,6 +657,73 @@ function closeAllReactionMenus() {
     const menus = document.querySelectorAll('.reaction-menu');
     menus.forEach(menu => {
         closeReactionMenu(menu);
+    });
+}
+
+// New: updateMessageReaction - updates reactions UI for a message
+function updateMessageReaction(messageId, reaction, username, reactions) {
+    // reactions expected as object: { emoji: [usernames] }
+    if (!messagesContainer) return;
+    
+    // If server provided a full reactions object, use it; otherwise use stored map
+    const currentReactions = reactions || messageReactions.get(messageId) || {};
+    messageReactions.set(messageId, currentReactions);
+    
+    const messageElement = messagesContainer.querySelector(`[data-message-id="${messageId}"]`);
+    if (!messageElement) return;
+    
+    // Find or create reactions container inside .message
+    let reactionsContainer = messageElement.querySelector('.reactions-container');
+    if (!reactionsContainer) {
+        const messageDiv = messageElement.querySelector('.message') || messageElement;
+        reactionsContainer = document.createElement('div');
+        reactionsContainer.className = 'reactions-container';
+        messageDiv.appendChild(reactionsContainer);
+    }
+    
+    // Rebuild reactions markup
+    reactionsContainer.innerHTML = '';
+    Object.entries(currentReactions).forEach(([emojiKey, usersArray]) => {
+        if (!usersArray || usersArray.length === 0) return;
+        const reactionDiv = document.createElement('div');
+        reactionDiv.className = 'reaction';
+        reactionDiv.dataset.reaction = emojiKey;
+        
+        const emojiSpan = document.createElement('span');
+        emojiSpan.className = 'reaction-emoji';
+        emojiSpan.textContent = emojiKey;
+        
+        const countSpan = document.createElement('span');
+        countSpan.className = 'reaction-count';
+        countSpan.textContent = usersArray.length;
+        
+        reactionDiv.appendChild(emojiSpan);
+        reactionDiv.appendChild(countSpan);
+        
+        // visually mark if current user reacted
+        if (currentUsername && usersArray.includes(currentUsername)) {
+            reactionDiv.classList.add('reacted');
+        }
+        
+        // Clicking a reaction toggles it (sends to server if connected)
+        reactionDiv.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const emo = reactionDiv.dataset.reaction;
+            if (socket && isConnected) {
+                socket.emit('message-reaction', { messageId: messageId, reaction: emo });
+            } else {
+                // toggle locally
+                const users = currentReactions[emo] || [];
+                const idx = users.indexOf(currentUsername);
+                if (idx === -1) users.push(currentUsername);
+                else users.splice(idx, 1);
+                currentReactions[emo] = users;
+                messageReactions.set(messageId, currentReactions);
+                updateMessageReaction(messageId, null, null, currentReactions);
+            }
+        });
+        
+        reactionsContainer.appendChild(reactionDiv);
     });
 }
     
@@ -766,6 +855,16 @@ function closeAllReactionMenus() {
                             messageId: data.id,
                             reaction: reaction
                         });
+                    } else {
+                        // local toggle
+                        const existing = messageReactions.get(data.id) || {};
+                        const users = existing[reaction] || [];
+                        const idx = users.indexOf(currentUsername);
+                        if (idx === -1) users.push(currentUsername);
+                        else users.splice(idx, 1);
+                        existing[reaction] = users;
+                        messageReactions.set(data.id, existing);
+                        updateMessageReaction(data.id, null, null, existing);
                     }
                 });
             });
@@ -1217,6 +1316,7 @@ function closeAllReactionMenus() {
             .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
             .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
             @keyframes typing { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+            .reaction.reacted { box-shadow: 0 0 0 2px rgba(0,0,0,0.04); background: rgba(0,0,0,0.03); border-radius: 12px; }
         `;
         document.head.appendChild(style);
         
