@@ -494,106 +494,149 @@ document.addEventListener('DOMContentLoaded', function() {
     // ==================== REACTION FUNCTIONS ====================
     
     function showReactionMenu(messageId, event) {
-        const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '😠'];
-        const menu = document.createElement('div');
-        menu.className = 'reaction-menu';
-        menu.style.cssText = `
-            position: fixed;
-            background: white;
-            border-radius: 24px;
-            padding: 4px;
+    console.log('Showing reaction menu for message:', messageId);
+    
+    // Close any existing reaction menu first
+    closeAllReactionMenus();
+    
+    const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '😠'];
+    const menu = document.createElement('div');
+    menu.id = 'reaction-menu-' + Date.now(); // Unique ID
+    menu.className = 'reaction-menu';
+    menu.style.cssText = `
+        position: fixed;
+        background: white;
+        border-radius: 24px;
+        padding: 8px;
+        display: flex;
+        gap: 6px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+        z-index: 10000;
+        border: 1px solid #e0e0e0;
+    `;
+    
+    // Create reaction buttons
+    reactionEmojis.forEach(emoji => {
+        const btn = document.createElement('button');
+        btn.textContent = emoji;
+        btn.style.cssText = `
+            font-size: 24px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            transition: all 0.2s;
             display: flex;
-            gap: 4px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
         `;
         
-        reactionEmojis.forEach(emoji => {
-            const btn = document.createElement('button');
-            btn.textContent = emoji;
-            btn.style.cssText = `
-                font-size: 20px;
-                border: none;
-                background: none;
-                cursor: pointer;
-                padding: 8px;
-                border-radius: 50%;
-                transition: all 0.2s;
-            `;
-            btn.onmouseover = () => btn.style.transform = 'scale(1.3)';
-            btn.onmouseout = () => btn.style.transform = 'scale(1)';
-            btn.onclick = () => {
-                // Send reaction to server
-                if (socket && isConnected) {
-                    socket.emit('message-reaction', {
-                        messageId: messageId,
-                        reaction: emoji
-                    });
-                    console.log('Sent reaction:', emoji, 'for message:', messageId);
-                }
-                document.body.removeChild(menu);
-            };
-            menu.appendChild(btn);
+        btn.addEventListener('mouseover', () => {
+            btn.style.transform = 'scale(1.3)';
+            btn.style.background = '#f0f0f0';
         });
         
-        // Position menu near the click
-        const rect = event.target.getBoundingClientRect();
-        menu.style.top = `${rect.top - 50}px`;
-        menu.style.left = `${rect.left}px`;
-        document.body.appendChild(menu);
+        btn.addEventListener('mouseout', () => {
+            btn.style.transform = 'scale(1)';
+            btn.style.background = 'none';
+        });
         
-        // Remove menu after click outside
-        setTimeout(() => {
-            const removeMenu = (e) => {
-                if (!menu.contains(e.target)) {
-                    document.body.removeChild(menu);
-                    document.removeEventListener('click', removeMenu);
-                }
-            };
-            document.addEventListener('click', removeMenu);
-        }, 100);
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            console.log('Reaction clicked:', emoji, 'for message:', messageId);
+            
+            // Send reaction to server
+            if (socket && isConnected) {
+                socket.emit('message-reaction', {
+                    messageId: messageId,
+                    reaction: emoji
+                });
+            }
+            
+            // Close this menu
+            closeReactionMenu(menu);
+        });
+        
+        menu.appendChild(btn);
+    });
+    
+    // Position menu
+    try {
+        const rect = event.target.getBoundingClientRect();
+        let top = rect.top - 60;
+        let left = rect.left;
+        
+        // Adjust position if near edges
+        if (top < 20) top = 20;
+        if (left < 20) left = 20;
+        if (left > window.innerWidth - 280) left = window.innerWidth - 280;
+        
+        menu.style.top = top + 'px';
+        menu.style.left = left + 'px';
+    } catch (error) {
+        console.error('Error positioning menu:', error);
+        menu.style.top = '50%';
+        menu.style.left = '50%';
+        menu.style.transform = 'translate(-50%, -50%)';
     }
     
-    function updateMessageReaction(messageId, reaction, username, reactions) {
-        const messageElement = messagesContainer.querySelector(`[data-message-id="${messageId}"]`);
-        if (!messageElement) return;
-        
-        let reactionsContainer = messageElement.querySelector('.reactions-container');
-        if (!reactionsContainer) {
-            reactionsContainer = document.createElement('div');
-            reactionsContainer.className = 'reactions-container';
-            messageElement.querySelector('.message').appendChild(reactionsContainer);
+    // Add to DOM
+    document.body.appendChild(menu);
+    
+    // Set up click outside handler
+    const clickOutsideHandler = (e) => {
+        if (menu.parentNode && !menu.contains(e.target)) {
+            // Don't close if clicking on another react button
+            if (!e.target.closest('.react-btn') && !e.target.closest('.reaction')) {
+                closeReactionMenu(menu);
+            }
         }
-        
-        // Update local reactions
-        messageReactions.set(messageId, reactions || {});
-        
-        // Clear and rebuild reactions
-        reactionsContainer.innerHTML = '';
-        
-        if (reactions && Object.keys(reactions).length > 0) {
-            Object.entries(reactions).forEach(([reactionEmoji, users]) => {
-                if (users.length > 0) {
-                    const reactionElement = document.createElement('div');
-                    reactionElement.className = 'reaction';
-                    reactionElement.innerHTML = `
-                        <span class="reaction-emoji">${reactionEmoji}</span>
-                        <span class="reaction-count">${users.length}</span>
-                    `;
-                    reactionElement.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        if (socket && isConnected) {
-                            socket.emit('message-reaction', {
-                                messageId: messageId,
-                                reaction: reactionEmoji
-                            });
-                        }
-                    });
-                    reactionsContainer.appendChild(reactionElement);
-                }
-            });
+    };
+    
+    // Set up escape key handler
+    const escapeHandler = (e) => {
+        if (e.key === 'Escape' && menu.parentNode) {
+            closeReactionMenu(menu);
         }
+    };
+    
+    // Add event listeners
+    document.addEventListener('click', clickOutsideHandler);
+    document.addEventListener('keydown', escapeHandler);
+    
+    // Store handlers on menu for cleanup
+    menu._clickHandler = clickOutsideHandler;
+    menu._escapeHandler = escapeHandler;
+}
+
+// Helper function to close a specific reaction menu
+function closeReactionMenu(menu) {
+    if (!menu) return;
+    
+    // Remove event listeners
+    if (menu._clickHandler) {
+        document.removeEventListener('click', menu._clickHandler);
     }
+    if (menu._escapeHandler) {
+        document.removeEventListener('keydown', menu._escapeHandler);
+    }
+    
+    // Remove from DOM if still attached
+    if (menu.parentNode) {
+        menu.parentNode.removeChild(menu);
+    }
+}
+
+// Helper function to close all reaction menus
+function closeAllReactionMenus() {
+    const menus = document.querySelectorAll('.reaction-menu');
+    menus.forEach(menu => {
+        closeReactionMenu(menu);
+    });
+}
     
     // ==================== MESSAGE FUNCTIONS ====================
     
