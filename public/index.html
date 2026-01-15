@@ -6,6 +6,7 @@
     <title>Self-Hosted Chat</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
 </head>
 <body>
     <div class="container">
@@ -13,54 +14,88 @@
         <div id="login-screen" class="screen">
             <div class="login-container">
                 <h1><i class="fas fa-comments"></i> Self-Hosted Chat</h1>
+                <p class="tagline">Secure, private, and completely self-hosted</p>
+                
                 <div class="form-group">
-                    <input type="text" id="username" placeholder="Enter your username" maxlength="20" autocomplete="off">
+                    <input type="text" 
+                           id="username" 
+                           placeholder="Enter your username (3-20 characters)" 
+                           maxlength="20" 
+                           autocomplete="off"
+                           autofocus>
                     <div id="username-error" class="error-message"></div>
                 </div>
+                
                 <button id="join-btn" class="btn-primary">
                     <i class="fas fa-sign-in-alt"></i> Join Chat
                 </button>
-                <div class="info-box">
-                    <p><i class="fas fa-info-circle"></i> This is a self-hosted chat application.</p>
-                    <p>No data is stored on external servers.</p>
+                
+                <div class="welcome-message">
+                    <i class="fas fa-lock"></i>
+                    <p>Your conversations are private and secure.<br>
+                    No data is stored on external servers.</p>
                 </div>
             </div>
         </div>
 
         <!-- Chat Screen -->
         <div id="chat-screen" class="screen hidden">
-            <div class="chat-container">
-                <!-- Header -->
-                <div class="chat-header">
-                    <h2><i class="fas fa-comments"></i> Chat Room</h2>
+            <div class="chat-screen">
+                <!-- Sidebar -->
+                <div class="sidebar">
                     <div class="user-info">
-                        <span id="current-user"></span>
-                        <button id="leave-btn" class="btn-secondary">
-                            <i class="fas fa-sign-out-alt"></i> Leave
+                        <h3>Logged in as</h3>
+                        <div id="current-user">Guest</div>
+                        <button class="leave-btn">
+                            <i class="fas fa-sign-out-alt"></i> Leave Chat
                         </button>
                     </div>
-                </div>
-
-                <!-- Online Users Sidebar -->
-                <div class="sidebar">
-                    <h3><i class="fas fa-users"></i> Online Users (<span id="online-count">0</span>)</h3>
-                    <div id="users-list"></div>
+                    
+                    <div class="online-users">
+                        <h3>
+                            <i class="fas fa-users"></i> Online Users
+                            <span id="online-count">0</span>
+                        </h3>
+                        <div id="users-list">
+                            <!-- Users will be added here dynamically -->
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Main Chat Area -->
                 <div class="main-chat">
-                    <!-- Messages Container -->
-                    <div id="messages-container"></div>
-
-                    <!-- Message Input -->
-                    <div class="message-input-container">
-                        <div id="typing-indicator"></div>
-                        <div class="input-group">
-                            <input type="text" id="message-input" placeholder="Type your message..." autocomplete="off">
-                            <button id="send-btn" class="btn-primary">
-                                <i class="fas fa-paper-plane"></i> Send
-                            </button>
+                    <!-- Chat Header -->
+                    <div class="chat-header">
+                        <h2><i class="fas fa-comments"></i> Chat Room</h2>
+                        <div class="chat-status">
+                            <div class="connection-status">
+                                <i class="fas fa-circle"></i> Connected
+                            </div>
                         </div>
+                    </div>
+
+                    <!-- Messages Container -->
+                    <div id="messages-container">
+                        <!-- Messages will be added here dynamically -->
+                        <div class="welcome-message">
+                            <i class="fas fa-comment-dots"></i>
+                            <p>Start chatting with other online users!</p>
+                        </div>
+                    </div>
+
+                    <!-- Typing Indicator -->
+                    <div id="typing-indicator"></div>
+
+                    <!-- Message Input Area -->
+                    <div class="message-input-area">
+                        <input type="text" 
+                               id="message-input" 
+                               placeholder="Type your message here..."
+                               maxlength="1000"
+                               autocomplete="off">
+                        <button class="send-btn" id="send-btn">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
                     </div>
                 </div>
             </div>
