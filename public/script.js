@@ -1,4 +1,4 @@
-// script.js - Complete with all features working
+// script.js - Complete with all features working (updated: auto-join & delete-fix)
 console.log("✅ script.js is loading!");
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -53,6 +53,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let lastMessageDate = null;
     let messageToDelete = null;
     let messageReactions = new Map(); // messageId -> {reaction: [usernames]}
+    let hasAutoJoined = false; // to avoid duplicate auto-joins
     
     // Emoji data
     const emojiCategoriesData = [
@@ -489,7 +490,10 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // If connected, ask server to delete. If not connected, do a local (optimistic) delete so UX isn't blocked.
         if (socket && isConnected) {
+            // Emit delete request to server - server should validate authorization
             socket.emit('delete-message', { messageId: messageToDelete });
+            // Optionally, you could optimistically remove message immediately:
+            // if (messageElement) { messageElement.remove(); messageReactions.delete(messageToDelete); }
         } else {
             if (messageElement) {
                 messageElement.remove();
@@ -732,12 +736,18 @@ function updateMessageReaction(messageId, reaction, username, reactions) {
     function addMessage(data, isSent) {
         if (!messagesContainer) return;
         
+        // Determine if this message is sent by current user.
+        // Support detection by username OR userId (if server includes userId in messages).
+        const sent = isSent ||
+                     (data.username && currentUsername && data.username === currentUsername) ||
+                     (data.userId && currentUserId && data.userId === currentUserId);
+        
         const messageWrapper = document.createElement('div');
-        messageWrapper.className = `message-wrapper ${isSent ? 'sent' : 'received'}`;
+        messageWrapper.className = `message-wrapper ${sent ? 'sent' : 'received'}`;
         messageWrapper.dataset.messageId = data.id;
         
         let messageHTML = `
-            <div class="message ${isSent ? 'sent' : 'received'}">
+            <div class="message ${sent ? 'sent' : 'received'}">
                 <div class="message-header">
                     <span class="message-username">${escapeHtml(data.username)}</span>
                     <span class="message-time">${formatTimestamp(data.timestamp)}</span>
@@ -806,7 +816,7 @@ function updateMessageReaction(messageId, reaction, username, reactions) {
                     <button class="action-btn react-btn" title="React">
                         <i class="fas fa-smile"></i>
                     </button>
-                    ${isSent ? `<button class="action-btn delete-btn" title="Delete">
+                    ${sent ? `<button class="action-btn delete-btn" title="Delete">
                         <i class="fas fa-trash-alt"></i>
                     </button>` : ''}
                 </div>
@@ -1094,6 +1104,9 @@ function updateMessageReaction(messageId, reaction, username, reactions) {
     // ==================== SOCKET FUNCTIONS ====================
     
     function connectSocket() {
+        // Prevent multiple socket connections
+        if (socket && socket.connected) return;
+        
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
         
@@ -1110,6 +1123,14 @@ function updateMessageReaction(messageId, reaction, username, reactions) {
             console.log('✅ Connected to server');
             isConnected = true;
             updateConnectionStatus(true);
+
+            // Auto-join if we have a recent session and haven't auto-joined yet
+            const session = loadUserSession();
+            if (!hasAutoJoined && session && session.username) {
+                console.log('Auto-joining with saved session:', session.username);
+                socket.emit('user-join', session.username);
+                hasAutoJoined = true;
+            }
         });
 
         socket.on('disconnect', () => {
@@ -1173,6 +1194,7 @@ function updateMessageReaction(messageId, reaction, username, reactions) {
             
             if (history && history.length > 0) {
                 history.forEach(msg => {
+                    // Let addMessage determine sent vs received by checking username/userId
                     addMessage(msg, msg.username === currentUsername);
                 });
                 scrollToBottom();
@@ -1301,6 +1323,9 @@ function updateMessageReaction(messageId, reaction, username, reactions) {
         initImageInput();
         
         if (usernameInput) usernameInput.focus();
+        
+        // Connect socket early so we can auto-rejoin if session exists
+        connectSocket();
         
         // Add CSS animations
         const style = document.createElement('style');
