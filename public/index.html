@@ -86,19 +86,65 @@
                     <!-- Typing Indicator -->
                     <div id="typing-indicator"></div>
 
+                    <!-- Reply Preview -->
+                    <div id="reply-to-container" class="reply-to-container hidden">
+                        <div id="reply-to-info" class="reply-to-info"></div>
+                        <button id="cancel-reply" class="cancel-reply">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <!-- Image Preview -->
+                    <div id="image-preview" class="image-preview hidden">
+                        <div class="preview-header">
+                            <h4><i class="fas fa-image"></i> Image Preview</h4>
+                            <button id="remove-image" class="remove-image">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <img id="preview-image" src="" alt="Preview">
+                    </div>
+
                     <!-- Message Input Area -->
                     <div class="message-input-area">
-                        <input type="text" 
-                               id="message-input" 
-                               placeholder="Type your message here..."
-                               maxlength="1000"
-                               autocomplete="off">
+                        <div class="input-buttons">
+                            <button id="emoji-btn" class="input-btn">
+                                <i class="fas fa-smile"></i>
+                            </button>
+                            <button id="image-btn" class="input-btn">
+                                <i class="fas fa-image"></i>
+                            </button>
+                        </div>
+                        
+                        <textarea id="message-input" 
+                                  placeholder="Type your message here..."
+                                  maxlength="1000"
+                                  autocomplete="off"
+                                  rows="1"></textarea>
+                        
                         <button class="send-btn" id="send-btn">
                             <i class="fas fa-paper-plane"></i>
                         </button>
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Emoji Picker -->
+    <div id="emoji-picker" class="emoji-picker-container">
+        <input type="text" id="emoji-search" class="emoji-search" placeholder="Search emojis...">
+        <div id="emoji-categories" class="emoji-categories"></div>
+        <div id="emoji-grid" class="emoji-grid"></div>
+    </div>
+
+    <!-- Image Modal -->
+    <div id="image-modal" class="image-modal">
+        <div class="modal-content">
+            <button id="close-modal" class="close-modal">
+                <i class="fas fa-times"></i>
+            </button>
+            <img id="modal-image" src="" alt="Full size">
         </div>
     </div>
 
