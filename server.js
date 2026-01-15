@@ -10,13 +10,28 @@ const io = socketIo(server);
 // Store active users
 const users = new Map();
 
-// Serve static files from 'public' directory
+// Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Handle all routes by serving index.html (for SPA)
-app.get('*', (req, res) => {
+// Basic route
+app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+// Health check for Render
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Sanitize message function
+function sanitizeMessage(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 // Handle socket connections
 io.on('connection', (socket) => {
@@ -24,8 +39,11 @@ io.on('connection', (socket) => {
 
   // Listen for new user joining
   socket.on('user-join', (username) => {
+    // Sanitize username
+    const sanitizedUsername = sanitizeMessage(username.substring(0, 20));
+    
     // Check if username is taken
-    const isTaken = Array.from(users.values()).includes(username);
+    const isTaken = Array.from(users.values()).includes(sanitizedUsername);
     
     if (isTaken) {
       socket.emit('username-taken');
@@ -33,15 +51,16 @@ io.on('connection', (socket) => {
     }
 
     // Store user
-    users.set(socket.id, username);
+    users.set(socket.id, sanitizedUsername);
     
     // Notify the user who joined
-    socket.emit('user-joined', username);
+    socket.emit('user-joined', sanitizedUsername);
     
     // Notify all other users
     socket.broadcast.emit('user-connected', {
-      username,
-      timestamp: new Date().toLocaleTimeString()
+      username: sanitizedUsername,
+      timestamp: new Date().toLocaleTimeString(),
+      date: new Date().toLocaleDateString()
     });
 
     // Send current users list to the new user
@@ -51,10 +70,17 @@ io.on('connection', (socket) => {
   // Handle incoming messages
   socket.on('send-message', (data) => {
     const username = users.get(socket.id);
+    if (!username) return;
+    
+    // Sanitize message and limit length
+    const sanitizedMessage = sanitizeMessage(data.message.substring(0, 1000));
+    
     const messageData = {
       username,
-      message: data.message,
-      timestamp: new Date().toLocaleTimeString()
+      message: sanitizedMessage,
+      timestamp: new Date().toLocaleTimeString(),
+      date: new Date().toLocaleDateString(),
+      isSystem: false
     };
     
     // Broadcast message to all users
@@ -81,7 +107,8 @@ io.on('connection', (socket) => {
       // Notify all users
       io.emit('user-disconnected', {
         username,
-        timestamp: new Date().toLocaleTimeString()
+        timestamp: new Date().toLocaleTimeString(),
+        date: new Date().toLocaleDateString()
       });
       
       console.log('User disconnected:', username);
@@ -89,11 +116,11 @@ io.on('connection', (socket) => {
   });
 });
 
-// Start server - IMPORTANT: Use 0.0.0.0 for Render
+// Start server
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
 server.listen(PORT, HOST, () => {
-  console.log(`Server running on http://${HOST}:${PORT}`);
-  console.log(`Public directory: ${path.join(__dirname, 'public')}`);
+  console.log(`✅ Server running on http://${HOST}:${PORT}`);
+  console.log(`📁 Serving files from: ${path.join(__dirname, 'public')}`);
 });
