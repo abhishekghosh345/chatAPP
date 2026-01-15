@@ -7,8 +7,13 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-// Store active users
+// Store active users and messages (in memory)
 const users = new Map();
+const messages = [];
+
+// Increase payload limit for images
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -18,13 +23,14 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Health check for Render
+// Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Sanitize message function
+// Sanitize function
 function sanitizeMessage(text) {
+  if (!text) return '';
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -37,21 +43,27 @@ function sanitizeMessage(text) {
 io.on('connection', (socket) => {
   console.log('New user connected:', socket.id);
 
+  // Send message history (last 50 messages)
+  socket.emit('message-history', messages.slice(-50));
+
   // Listen for new user joining
   socket.on('user-join', (username) => {
-    // Sanitize username
     const sanitizedUsername = sanitizeMessage(username.substring(0, 20));
     
     // Check if username is taken
-    const isTaken = Array.from(users.values()).includes(sanitizedUsername);
+    const isTaken = Array.from(users.values()).some(u => u.username === sanitizedUsername);
     
     if (isTaken) {
       socket.emit('username-taken');
       return;
     }
 
-    // Store user
-    users.set(socket.id, sanitizedUsername);
+    // Store user with additional info
+    users.set(socket.id, {
+      username: sanitizedUsername,
+      joinTime: Date.now(),
+      socketId: socket.id
+    });
     
     // Notify the user who joined
     socket.emit('user-joined', sanitizedUsername);
@@ -59,29 +71,39 @@ io.on('connection', (socket) => {
     // Notify all other users
     socket.broadcast.emit('user-connected', {
       username: sanitizedUsername,
-      timestamp: new Date().toLocaleTimeString(),
-      date: new Date().toLocaleDateString()
+      timestamp: Date.now(),
+      userCount: users.size
     });
 
     // Send current users list to the new user
-    socket.emit('users-list', Array.from(users.values()));
+    const userList = Array.from(users.values()).map(u => u.username);
+    socket.emit('users-list', userList);
   });
 
   // Handle incoming messages
   socket.on('send-message', (data) => {
-    const username = users.get(socket.id);
-    if (!username) return;
-    
-    // Sanitize message and limit length
-    const sanitizedMessage = sanitizeMessage(data.message.substring(0, 1000));
+    const user = users.get(socket.id);
+    if (!user) return;
     
     const messageData = {
-      username,
-      message: sanitizedMessage,
-      timestamp: new Date().toLocaleTimeString(),
-      date: new Date().toLocaleDateString(),
-      isSystem: false
+      id: Date.now() + Math.random().toString(36).substr(2, 9),
+      username: user.username,
+      message: data.message,
+      timestamp: Date.now(),
+      type: data.type || 'text',
+      replyTo: data.replyTo || null,
+      imageData: data.imageData || null,
+      imageName: data.imageName || null
     };
+
+    // Sanitize text messages
+    if (messageData.type === 'text') {
+      messageData.message = sanitizeMessage(messageData.message.substring(0, 2000));
+    }
+
+    // Store message
+    messages.push(messageData);
+    if (messages.length > 200) messages.shift(); // Keep only last 200 messages
     
     // Broadcast message to all users
     io.emit('receive-message', messageData);
@@ -89,29 +111,41 @@ io.on('connection', (socket) => {
 
   // Handle typing indicator
   socket.on('typing', (isTyping) => {
-    const username = users.get(socket.id);
-    if (username) {
+    const user = users.get(socket.id);
+    if (user) {
       socket.broadcast.emit('user-typing', {
-        username,
+        username: user.username,
         isTyping
       });
     }
   });
 
+  // Handle message reactions
+  socket.on('message-reaction', (data) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+    
+    io.emit('update-reaction', {
+      messageId: data.messageId,
+      reaction: data.reaction,
+      username: user.username
+    });
+  });
+
   // Handle disconnection
   socket.on('disconnect', () => {
-    const username = users.get(socket.id);
-    if (username) {
+    const user = users.get(socket.id);
+    if (user) {
       users.delete(socket.id);
       
       // Notify all users
       io.emit('user-disconnected', {
-        username,
-        timestamp: new Date().toLocaleTimeString(),
-        date: new Date().toLocaleDateString()
+        username: user.username,
+        timestamp: Date.now(),
+        userCount: users.size
       });
       
-      console.log('User disconnected:', username);
+      console.log('User disconnected:', user.username);
     }
   });
 });
