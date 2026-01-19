@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Feature elements
     const emojiBtn = document.getElementById('emoji-btn');
-    const imageBtn = document.getElementById('image-btn');
+    const imageInput = document.getElementById('image-input');
     const emojiPicker = document.getElementById('emoji-picker');
     const emojiSearch = document.getElementById('emoji-search');
     const emojiGrid = document.getElementById('emoji-grid');
@@ -666,9 +666,14 @@ function insertEmoji(emoji) {
 }
     
     function toggleEmojiPicker() {
-        if (!emojiPicker) return;
+        console.log('Emoji button clicked');
+        if (!emojiPicker) {
+            console.log('Emoji picker not found');
+            return;
+        }
 
         emojiPicker.classList.toggle('show');
+        console.log('Emoji picker toggled, show class:', emojiPicker.classList.contains('show'));
 
         if (emojiPicker.classList.contains('show') && emojiSearch) {
             emojiSearch.focus();
@@ -678,21 +683,14 @@ function insertEmoji(emoji) {
     // ==================== IMAGE FUNCTIONS ====================
     
     function initImageInput() {
-        const imageInput = document.createElement('input');
-        imageInput.type = 'file';
-        imageInput.accept = 'image/*';
-        imageInput.style.position = 'absolute';
-        imageInput.style.left = '-9999px';
-        imageInput.style.top = '-9999px';
-        imageInput.style.opacity = '0';
-        imageInput.addEventListener('change', handleImageSelect);
-        document.body.appendChild(imageInput);
-        window.imageInput = imageInput;
+        if (imageInput) {
+            imageInput.addEventListener('change', handleImageSelect);
+        }
     }
     
     function triggerImageUpload() {
-        if (window.imageInput) {
-            window.imageInput.click();
+        if (imageInput) {
+            imageInput.click();
         }
     }
     
@@ -764,8 +762,8 @@ function insertEmoji(emoji) {
         if (imagePreview) {
             imagePreview.classList.add('hidden');
         }
-        if (window.imageInput) {
-            window.imageInput.value = '';
+        if (imageInput) {
+            imageInput.value = '';
         }
     }
     
@@ -831,8 +829,25 @@ function insertEmoji(emoji) {
     
     function showDeleteModal(messageId) {
         if (!deleteModal) return;
-        
+
         messageToDelete = messageId;
+
+        // Find the message element and populate preview
+        const messageElement = messagesContainer.querySelector(`[data-message-id="${messageId}"]`);
+        const deleteMessageText = document.getElementById('delete-message-text');
+
+        if (messageElement && deleteMessageText) {
+            const messageContent = messageElement.querySelector('.message-content');
+            if (messageContent) {
+                // Get text content, limit to 100 characters for preview
+                let previewText = messageContent.textContent.trim();
+                if (previewText.length > 100) {
+                    previewText = previewText.substring(0, 100) + '...';
+                }
+                deleteMessageText.textContent = previewText || '(empty message)';
+            }
+        }
+
         deleteModal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
     }
@@ -1688,7 +1703,8 @@ function updateMessageReaction(messageId, reaction, username, reactions) {
             chatrooms.set(data.roomId, {
                 name: data.name,
                 members: data.members,
-                messages: []
+                messages: [],
+                createdBy: data.createdBy
             });
             updateChatroomsList();
             showSystemMessage(`Chatroom "${data.name}" created successfully!`);
@@ -1723,7 +1739,8 @@ function updateMessageReaction(messageId, reaction, username, reactions) {
                 chatrooms.set(room.id, {
                     name: room.name,
                     members: room.members,
-                    messages: room.messages || []
+                    messages: room.messages || [],
+                    createdBy: room.createdBy
                 });
             });
             updateChatroomsList();
@@ -1784,8 +1801,8 @@ function updateMessageReaction(messageId, reaction, username, reactions) {
         if (emojiBtn) {
             emojiBtn.addEventListener('click', toggleEmojiPicker);
         }
-        
-        if (imageBtn) imageBtn.addEventListener('click', triggerImageUpload);
+
+        // Image input is handled via label click
         if (cancelReplyBtn) cancelReplyBtn.addEventListener('click', cancelReply);
         if (removeImageBtn) removeImageBtn.addEventListener('click', removeImage);
         if (closeModalBtn) closeModalBtn.addEventListener('click', closeImageModal);
