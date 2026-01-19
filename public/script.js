@@ -315,24 +315,16 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    function insertEmoji(emoji) {
-        if (!messageInput) return;
-        
-        const cursorPos = messageInput.selectionStart;
-        const textBefore = messageInput.value.substring(0, cursorPos);
-        const textAfter = messageInput.value.substring(cursorPos);
-        
-        messageInput.value = textBefore + emoji + textAfter;
-        messageInput.focus();
-        messageInput.selectionStart = cursorPos + emoji.length;
-        messageInput.selectionEnd = cursorPos + emoji.length;
-        
-        messageInput.dispatchEvent(new Event('input'));
-        
-        if (emojiPicker) {
-            emojiPicker.classList.add('hidden');
-        }
+function insertEmoji(emoji) {
+    if (!messageInput) return;
+
+    messageInput.value += emoji;
+    messageInput.focus();
+
+    if (emojiPicker) {
+        emojiPicker.classList.add('hidden');
     }
+}
     
     function toggleEmojiPicker() {
         if (!emojiPicker) return;
@@ -350,7 +342,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const imageInput = document.createElement('input');
         imageInput.type = 'file';
         imageInput.accept = 'image/*';
-        imageInput.style.display = 'none';
+        imageInput.style.position = 'absolute';
+        imageInput.style.left = '-9999px';
+        imageInput.style.top = '-9999px';
+        imageInput.style.opacity = '0';
         imageInput.addEventListener('change', handleImageSelect);
         document.body.appendChild(imageInput);
         window.imageInput = imageInput;
