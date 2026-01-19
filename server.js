@@ -11,6 +11,7 @@ const io = socketIo(server);
 const users = new Map(); // socket.id -> {username, userId, socketId}
 const messages = []; // Array of all messages
 const messageReactions = new Map(); // messageId -> {reaction: [usernames]}
+const chatrooms = new Map(); // roomId -> {name, members: [userIds], messages: []}
 
 // Increase payload limit for images
 app.use(express.json({ limit: '10mb' }));
@@ -66,6 +67,15 @@ io.on('connection', (socket) => {
     reactions: messageReactions.get(msg.id) || {}
   }));
   socket.emit('message-history', historyWithReactions.slice(-100));
+
+  // Send current rooms list
+  const roomsList = Array.from(chatrooms.values()).map(r => ({
+    id: r.id,
+    name: r.name,
+    members: r.members,
+    messages: r.messages.slice(-10) // Send last 10 messages
+  }));
+  socket.emit('rooms-list', roomsList);
 
   // Listen for new user joining
   socket.on('user-join', (username) => {
@@ -139,7 +149,7 @@ io.on('connection', (socket) => {
       socket.emit('error', { message: 'Not authenticated' });
       return;
     }
-    
+
     const messageData = {
       id: generateMessageId(),
       username: user.username,
@@ -149,7 +159,9 @@ io.on('connection', (socket) => {
       type: data.type || 'text',
       replyTo: data.replyTo || null,
       imageData: data.imageData || null,
-      imageName: data.imageName || null
+      imageName: data.imageName || null,
+      recipient: data.recipient || null,
+      isPrivate: !!data.recipient
     };
 
     // Sanitize text messages
@@ -157,17 +169,32 @@ io.on('connection', (socket) => {
       messageData.message = sanitizeMessage(messageData.message.substring(0, 2000));
     }
 
-    // Store message
-    messages.push(messageData);
-    
-    // Keep only last 500 messages
-    if (messages.length > 500) {
-      messages.shift();
+    if (data.recipient) {
+      // Private message
+      const recipientSocket = Array.from(users.entries()).find(([id, u]) => u.userId === data.recipient)?.[0];
+      if (recipientSocket) {
+        // Send to recipient
+        io.to(recipientSocket).emit('receive-message', messageData);
+        // Send to sender
+        socket.emit('receive-message', messageData);
+        console.log(`Private message from ${user.username} to ${data.recipient}: ${messageData.message.substring(0, 50)}...`);
+      } else {
+        socket.emit('error', { message: 'Recipient not found' });
+      }
+    } else {
+      // Room message
+      // Store message
+      messages.push(messageData);
+
+      // Keep only last 500 messages
+      if (messages.length > 500) {
+        messages.shift();
+      }
+
+      // Broadcast message to all users
+      io.emit('receive-message', messageData);
+      console.log(`Room message from ${user.username}: ${messageData.message.substring(0, 50)}...`);
     }
-    
-    // Broadcast message to all users
-    io.emit('receive-message', messageData);
-    console.log(`Message from ${user.username}: ${messageData.message.substring(0, 50)}...`);
   });
 
   // Handle typing indicator
@@ -228,13 +255,22 @@ io.on('connection', (socket) => {
     console.log(`Reaction ${reaction} on message ${messageId} by ${user.username}`);
   });
 
+  // Handle room history request
+  socket.on('request-room-history', () => {
+    const historyWithReactions = messages.map(msg => ({
+      ...msg,
+      reactions: messageReactions.get(msg.id) || {}
+    }));
+    socket.emit('message-history', historyWithReactions.slice(-100));
+  });
+
   // Handle message deletion
   socket.on('delete-message', (data) => {
     const user = users.get(socket.id);
     if (!user) return;
-    
+
     const { messageId } = data;
-    
+
     // Find the message
     const messageIndex = messages.findIndex(msg => msg.id === messageId);
     if (messageIndex !== -1) {
@@ -242,16 +278,16 @@ io.on('connection', (socket) => {
       if (messages[messageIndex].userId === user.userId) {
         // Remove from array
         const deletedMessage = messages.splice(messageIndex, 1)[0];
-        
+
         // Remove reactions for this message
         messageReactions.delete(messageId);
-        
+
         // Notify all clients
         io.emit('message-deleted', {
           messageId: messageId,
           deletedBy: user.username
         });
-        
+
         // Send deletion notification
         const deletionMessage = {
           id: generateMessageId(),
@@ -260,16 +296,165 @@ io.on('connection', (socket) => {
           timestamp: Date.now(),
           type: 'system'
         };
-        
+
         messages.push(deletionMessage);
         io.emit('receive-message', deletionMessage);
-        
+
         console.log(`Message ${messageId} deleted by ${user.username}`);
       } else {
         console.log(`User ${user.username} tried to delete message they don't own`);
       }
     } else {
       console.log(`Message ${messageId} not found for deletion`);
+    }
+  });
+
+  // Handle room creation
+  socket.on('create-room', (data) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const { name, members } = data;
+
+    // Validate room name
+    if (!name || name.trim().length === 0 || name.length > 50) {
+      socket.emit('error', { message: 'Invalid room name' });
+      return;
+    }
+
+    // Validate members
+    if (!members || members.length < 2) {
+      socket.emit('error', { message: 'Room must have at least 2 members' });
+      return;
+    }
+
+    // Check if all members exist
+    const validMembers = members.filter(memberId =>
+      Array.from(users.values()).some(u => u.userId === memberId)
+    );
+
+    if (validMembers.length !== members.length) {
+      socket.emit('error', { message: 'Some members not found' });
+      return;
+    }
+
+    // Generate room ID
+    const roomId = 'room_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+
+    // Create room
+    const room = {
+      id: roomId,
+      name: sanitizeMessage(name.trim()),
+      members: validMembers,
+      messages: [],
+      createdBy: user.userId,
+      createdAt: Date.now()
+    };
+
+    chatrooms.set(roomId, room);
+
+    // Notify all members of the room
+    validMembers.forEach(memberId => {
+      const memberSocket = Array.from(users.entries()).find(([id, u]) => u.userId === memberId)?.[0];
+      if (memberSocket) {
+        io.to(memberSocket).emit('room-created', {
+          roomId: roomId,
+          name: room.name,
+          members: room.members
+        });
+      }
+    });
+
+    // Send updated rooms list to all users
+    const roomsList = Array.from(chatrooms.values()).map(r => ({
+      id: r.id,
+      name: r.name,
+      members: r.members,
+      messages: r.messages.slice(-10) // Send last 10 messages
+    }));
+    io.emit('rooms-list', roomsList);
+
+    console.log(`Room created: ${room.name} by ${user.username} with ${validMembers.length} members`);
+  });
+
+  // Handle room messages
+  socket.on('send-room-message', (data) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const { roomId, message, type, replyTo, imageData, imageName } = data;
+
+    // Check if user is member of the room
+    const room = chatrooms.get(roomId);
+    if (!room || !room.members.includes(user.userId)) {
+      socket.emit('error', { message: 'Not a member of this room' });
+      return;
+    }
+
+    const messageData = {
+      id: generateMessageId(),
+      username: user.username,
+      userId: user.userId,
+      message: message,
+      timestamp: Date.now(),
+      type: type || 'text',
+      replyTo: replyTo || null,
+      imageData: imageData || null,
+      imageName: imageName || null,
+      roomId: roomId
+    };
+
+    // Sanitize text messages
+    if (messageData.type === 'text') {
+      messageData.message = sanitizeMessage(messageData.message.substring(0, 2000));
+    }
+
+    // Store message in room
+    room.messages.push(messageData);
+
+    // Keep only last 100 messages per room
+    if (room.messages.length > 100) {
+      room.messages.shift();
+    }
+
+    // Send to all room members
+    room.members.forEach(memberId => {
+      const memberSocket = Array.from(users.entries()).find(([id, u]) => u.userId === memberId)?.[0];
+      if (memberSocket) {
+        io.to(memberSocket).emit('room-message', messageData);
+      }
+    });
+
+    console.log(`Room message in ${room.name} from ${user.username}: ${messageData.message.substring(0, 50)}...`);
+  });
+
+  // Handle leaving room
+  socket.on('leave-room', (data) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const { roomId } = data;
+    const room = chatrooms.get(roomId);
+
+    if (room && room.members.includes(user.userId)) {
+      // Remove user from room
+      room.members = room.members.filter(memberId => memberId !== user.userId);
+
+      // If room has no members left, delete it
+      if (room.members.length === 0) {
+        chatrooms.delete(roomId);
+        console.log(`Room ${room.name} deleted - no members left`);
+      } else {
+        // Send updated rooms list to all users
+        const roomsList = Array.from(chatrooms.values()).map(r => ({
+          id: r.id,
+          name: r.name,
+          members: r.members,
+          messages: r.messages.slice(-10)
+        }));
+        io.emit('rooms-list', roomsList);
+        console.log(`User ${user.username} left room ${room.name}`);
+      }
     }
   });
 
