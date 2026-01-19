@@ -51,6 +51,18 @@
                         </button>
                     </div>
                     
+                    <div class="chatrooms-section">
+                        <div class="section-header">
+                            <h3><i class="fas fa-comments"></i> Chatrooms</h3>
+                            <button id="create-room-btn" class="create-room-btn" title="Create new chatroom">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                        <div id="chatrooms-list">
+                            <!-- Chatrooms will be added here dynamically -->
+                        </div>
+                    </div>
+
                     <div class="online-users">
                         <h3>
                             <i class="fas fa-users"></i> Online Users
@@ -66,8 +78,14 @@
                 <div class="main-chat">
                     <!-- Chat Header -->
                     <div class="chat-header">
-                        <h2><i class="fas fa-comments"></i> Chat Room</h2>
+                        <h2 id="chat-title"><i class="fas fa-comments"></i> Chat Room</h2>
                         <div class="chat-status">
+                            <button id="back-to-room-btn" class="back-to-room-btn hidden">
+                                <i class="fas fa-arrow-left"></i> Back to Room
+                            </button>
+                            <button id="theme-toggle" class="theme-toggle-btn" title="Toggle theme">
+                                <i class="fas fa-moon"></i>
+                            </button>
                             <div class="connection-status">
                                 <i class="fas fa-circle"></i> Connected
                             </div>
@@ -157,6 +175,51 @@
                 <button id="cancel-delete" class="btn-secondary">Cancel</button>
                 <button id="confirm-delete" class="btn-danger">Delete</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Create Chatroom Modal -->
+    <div id="create-room-modal" class="create-room-modal hidden">
+        <div class="modal-content">
+            <h3><i class="fas fa-plus"></i> Create Chatroom</h3>
+            <div class="form-group">
+                <input type="text"
+                       id="room-name"
+                       placeholder="Enter chatroom name"
+                       maxlength="50"
+                       autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label>Select Members:</label>
+                <div id="members-selection" class="members-selection">
+                    <!-- Members will be populated here -->
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button id="cancel-create-room" class="btn-secondary">Cancel</button>
+                <button id="confirm-create-room" class="btn-primary">Create Room</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Room Details Panel -->
+    <div id="room-details-panel" class="room-details-panel">
+        <div class="room-details-header">
+            <h3><i class="fas fa-info-circle"></i> Room Details</h3>
+            <button id="close-room-details" class="close-room-details">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="room-members-list">
+            <h4><i class="fas fa-users"></i> Members</h4>
+            <div id="room-members-container">
+                <!-- Room members will be populated here -->
+            </div>
+        </div>
+        <div class="room-actions">
+            <button id="leave-room-btn" class="room-leave-btn">
+                <i class="fas fa-sign-out-alt"></i> Leave Room
+            </button>
         </div>
     </div>
 
