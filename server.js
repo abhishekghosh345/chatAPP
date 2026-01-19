@@ -271,13 +271,16 @@ io.on('connection', (socket) => {
 
     const { messageId } = data;
 
-    // Find the message
-    const messageIndex = messages.findIndex(msg => msg.id === messageId);
+    // First check global messages (main room)
+    let messageIndex = messages.findIndex(msg => msg.id === messageId);
+    let roomId = null;
+
     if (messageIndex !== -1) {
       // Check if user owns the message
       if (messages[messageIndex].userId === user.userId) {
         // Remove from array
         const deletedMessage = messages.splice(messageIndex, 1)[0];
+        roomId = deletedMessage.roomId; // Might be null for main room
 
         // Remove reactions for this message
         messageReactions.delete(messageId);
@@ -294,18 +297,85 @@ io.on('connection', (socket) => {
           username: 'System',
           message: `${user.username} deleted a message`,
           timestamp: Date.now(),
-          type: 'system'
+          type: 'system',
+          roomId: roomId
         };
 
-        messages.push(deletionMessage);
-        io.emit('receive-message', deletionMessage);
+        if (roomId) {
+          // Room message deletion - send to room members
+          const room = chatrooms.get(roomId);
+          if (room) {
+            room.messages.push(deletionMessage);
+            room.members.forEach(memberId => {
+              const memberSocket = Array.from(users.entries()).find(([id, u]) => u.userId === memberId)?.[0];
+              if (memberSocket) {
+                io.to(memberSocket).emit('receive-message', deletionMessage);
+              }
+            });
+          }
+        } else {
+          // Main room message
+          messages.push(deletionMessage);
+          io.emit('receive-message', deletionMessage);
+        }
 
         console.log(`Message ${messageId} deleted by ${user.username}`);
       } else {
         console.log(`User ${user.username} tried to delete message they don't own`);
       }
     } else {
-      console.log(`Message ${messageId} not found for deletion`);
+      // Check room messages
+      for (const [rId, room] of chatrooms) {
+        const msgIndex = room.messages.findIndex(msg => msg.id === messageId);
+        if (msgIndex !== -1) {
+          if (room.messages[msgIndex].userId === user.userId) {
+            // Remove from room messages
+            const deletedMessage = room.messages.splice(msgIndex, 1)[0];
+            roomId = rId;
+
+            // Remove reactions for this message
+            messageReactions.delete(messageId);
+
+            // Notify room members
+            room.members.forEach(memberId => {
+              const memberSocket = Array.from(users.entries()).find(([id, u]) => u.userId === memberId)?.[0];
+              if (memberSocket) {
+                io.to(memberSocket).emit('message-deleted', {
+                  messageId: messageId,
+                  deletedBy: user.username
+                });
+              }
+            });
+
+            // Send deletion notification to room
+            const deletionMessage = {
+              id: generateMessageId(),
+              username: 'System',
+              message: `${user.username} deleted a message`,
+              timestamp: Date.now(),
+              type: 'system',
+              roomId: roomId
+            };
+
+            room.messages.push(deletionMessage);
+            room.members.forEach(memberId => {
+              const memberSocket = Array.from(users.entries()).find(([id, u]) => u.userId === memberId)?.[0];
+              if (memberSocket) {
+                io.to(memberSocket).emit('receive-message', deletionMessage);
+              }
+            });
+
+            console.log(`Room message ${messageId} deleted by ${user.username} in ${room.name}`);
+          } else {
+            console.log(`User ${user.username} tried to delete message they don't own`);
+          }
+          break;
+        }
+      }
+
+      if (!roomId) {
+        console.log(`Message ${messageId} not found for deletion`);
+      }
     }
   });
 
@@ -455,6 +525,36 @@ io.on('connection', (socket) => {
         io.emit('rooms-list', roomsList);
         console.log(`User ${user.username} left room ${room.name}`);
       }
+    }
+  });
+
+  // Handle room deletion
+  socket.on('delete-room', (data) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const { roomId } = data;
+    const room = chatrooms.get(roomId);
+
+    if (room && room.createdBy === user.userId) {
+      // Only creator can delete
+      chatrooms.delete(roomId);
+
+      // Notify all users about room deletion
+      io.emit('room-deleted', { roomId: roomId, deletedBy: user.username });
+
+      // Send updated rooms list to all users
+      const roomsList = Array.from(chatrooms.values()).map(r => ({
+        id: r.id,
+        name: r.name,
+        members: r.members,
+        messages: r.messages.slice(-10)
+      }));
+      io.emit('rooms-list', roomsList);
+
+      console.log(`Room ${room.name} deleted by creator ${user.username}`);
+    } else {
+      socket.emit('error', { message: 'Only room creator can delete the room' });
     }
   });
 
