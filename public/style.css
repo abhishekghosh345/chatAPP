@@ -1841,6 +1841,27 @@ body {
     background: #c82333;
 }
 
+.room-delete-btn {
+    background: var(--danger-color);
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    width: 100%;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.room-delete-btn:hover {
+    background: #c82333;
+}
+
 /* Dark theme for room details */
 [data-theme="dark"] .room-details-panel {
     background: #2d3436;
@@ -1874,6 +1895,14 @@ body {
 
 [data-theme="dark"] .room-actions {
     border-top: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .room-delete-btn {
+    background: var(--danger-color);
+}
+
+[data-theme="dark"] .room-delete-btn:hover {
+    background: #c82333;
 }
 
 [data-theme="dark"] .create-room-modal .modal-content {
