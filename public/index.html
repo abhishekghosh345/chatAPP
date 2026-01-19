@@ -216,11 +216,14 @@
                 <!-- Room members will be populated here -->
             </div>
         </div>
-        <div class="room-actions">
-            <button id="leave-room-btn" class="room-leave-btn">
-                <i class="fas fa-sign-out-alt"></i> Leave Room
-            </button>
-        </div>
+  <div class="room-actions">
+    <button id="leave-room-btn" class="room-leave-btn">
+      <i class="fas fa-sign-out-alt"></i> Leave Room
+    </button>
+    <button id="delete-room-btn" class="room-delete-btn" style="display: none;">
+      <i class="fas fa-trash-alt"></i> Delete Room
+    </button>
+  </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
