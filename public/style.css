@@ -862,7 +862,7 @@ body {
 
 /* Emoji Picker */
 .emoji-picker-container {
-    position: absolute;
+    position: fixed;
     bottom: 80px;
     right: 24px;
     background: white;
