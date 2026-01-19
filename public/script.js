@@ -58,6 +58,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const closeRoomDetailsBtn = document.getElementById('close-room-details');
     const roomMembersContainer = document.getElementById('room-members-container');
     const leaveRoomBtn = document.getElementById('leave-room-btn');
+    const deleteRoomBtn = document.getElementById('delete-room-btn');
     
     // ==================== VARIABLES ====================
     let socket;
@@ -476,13 +477,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     memberDiv.className = 'room-member-item';
 
                     const initials = member.username.substring(0, 2).toUpperCase();
-                    const isOnline = Array.from(users.values()).some(u => u.userId === memberId);
+                    const isOnline = !!users.get(memberId);
 
                     memberDiv.innerHTML = `
                         <div class="room-member-avatar">${initials}</div>
                         <div class="room-member-info">
                             <div class="room-member-name">${escapeHtml(member.username)}</div>
-                            <div class="room-member-role">${memberId === currentUserId ? 'You' : 'Member'}</div>
+                            <div class="room-member-role">${memberId === room.createdBy ? 'Creator' : memberId === currentUserId ? 'You' : 'Member'}</div>
                         </div>
                         <div class="room-member-online ${isOnline ? '' : 'room-member-offline'}">
                             ${isOnline ? 'Online' : 'Offline'}
@@ -492,6 +493,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     roomMembersContainer.appendChild(memberDiv);
                 }
             });
+        }
+
+        // Show delete button only for creator
+        const deleteRoomBtn = document.getElementById('delete-room-btn');
+        if (deleteRoomBtn) {
+            if (room.createdBy === currentUserId) {
+                deleteRoomBtn.style.display = 'block';
+            } else {
+                deleteRoomBtn.style.display = 'none';
+            }
         }
 
         roomDetailsPanel.classList.add('show');
@@ -514,6 +525,24 @@ document.addEventListener('DOMContentLoaded', function() {
         hideRoomDetails();
 
         showSystemMessage('You left the room');
+    }
+
+    function deleteRoom() {
+        if (!currentRoomId) return;
+
+        const room = chatrooms.get(currentRoomId);
+        if (!room) return;
+
+        // Confirm deletion
+        if (!confirm(`Are you sure you want to delete the room "${room.name}"? This action cannot be undone and will remove the room for all members.`)) {
+            return;
+        }
+
+        if (socket && isConnected) {
+            socket.emit('delete-room', { roomId: currentRoomId });
+        }
+
+        hideRoomDetails();
     }
     
     // ==================== VALIDATION FUNCTIONS ====================
@@ -1160,19 +1189,40 @@ function updateMessageReaction(messageId, reaction, username, reactions) {
         
         messageWrapper.innerHTML = messageHTML;
         messagesContainer.appendChild(messageWrapper);
-        
+
         // Store reactions
         if (data.reactions) {
             messageReactions.set(data.id, data.reactions);
         }
-        
+
         // Add event listeners
         if (data.username !== 'System') {
+            // Click on message to show/hide actions (for mobile)
+            messageWrapper.addEventListener('click', (e) => {
+                // Don't trigger if clicking on actions or reactions
+                if (e.target.closest('.message-actions') || e.target.closest('.reaction')) {
+                    return;
+                }
+
+                const actions = messageWrapper.querySelector('.message-actions');
+                if (actions) {
+                    // Toggle visibility
+                    if (actions.style.opacity === '1') {
+                        actions.style.opacity = '0';
+                    } else {
+                        actions.style.opacity = '1';
+                    }
+                }
+            });
+
             const replyBtn = messageWrapper.querySelector('.reply-btn');
             if (replyBtn) {
-                replyBtn.addEventListener('click', () => replyToMessage(data.id));
+                replyBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    replyToMessage(data.id);
+                });
             }
-            
+
             const reactBtn = messageWrapper.querySelector('.react-btn');
             if (reactBtn) {
                 reactBtn.addEventListener('click', (e) => {
@@ -1180,15 +1230,16 @@ function updateMessageReaction(messageId, reaction, username, reactions) {
                     showReactionMenu(data.id, e);
                 });
             }
-            
+
             const deleteBtn = messageWrapper.querySelector('.delete-btn');
             if (deleteBtn) {
-                deleteBtn.addEventListener('click', () => {
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     console.log('Delete button clicked for message:', data.id);
                     showDeleteModal(data.id);
                 });
             }
-            
+
             // Add click handlers for reactions
             const reactionElements = messageWrapper.querySelectorAll('.reaction');
             reactionElements.forEach(reactionEl => {
@@ -1677,6 +1728,25 @@ function updateMessageReaction(messageId, reaction, username, reactions) {
             });
             updateChatroomsList();
         });
+
+        socket.on('room-deleted', (data) => {
+            const { roomId, deletedBy } = data;
+
+            // Remove from local chatrooms
+            const room = chatrooms.get(roomId);
+            if (room) {
+                chatrooms.delete(roomId);
+
+                // If we were in this room, switch to main room
+                if (currentRoomId === roomId) {
+                    switchToRoomChat();
+                }
+
+                // Update UI
+                updateChatroomsList();
+                showSystemMessage(`Room "${room.name}" was deleted by ${deletedBy}`);
+            }
+        });
     }
     
     // ==================== EVENT LISTENERS ====================
@@ -1763,6 +1833,10 @@ function updateMessageReaction(messageId, reaction, username, reactions) {
 
         if (leaveRoomBtn) {
             leaveRoomBtn.addEventListener('click', leaveRoom);
+        }
+
+        if (deleteRoomBtn) {
+            deleteRoomBtn.addEventListener('click', deleteRoom);
         }
         
         // Close modals on click outside
