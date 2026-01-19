@@ -360,33 +360,63 @@ function insertEmoji(emoji) {
     function handleImageSelect(e) {
         const file = e.target.files[0];
         if (!file) return;
-        
+
         if (file.size > 5 * 1024 * 1024) {
             showSystemMessage('Image size should be less than 5MB');
             return;
         }
-        
+
         if (!file.type.startsWith('image/')) {
             showSystemMessage('Please select an image file');
             return;
         }
-        
+
         const reader = new FileReader();
         reader.onload = (event) => {
-            selectedImage = {
-                data: event.target.result,
-                name: file.name,
-                type: file.type
+            const img = new Image();
+            img.onload = () => {
+                // Compress image
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                // Calculate new size, max 800px width or height
+                let { width, height } = img;
+                const maxSize = 800;
+                if (width > height) {
+                    if (width > maxSize) {
+                        height = (height * maxSize) / width;
+                        width = maxSize;
+                    }
+                } else {
+                    if (height > maxSize) {
+                        width = (width * maxSize) / height;
+                        height = maxSize;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Compress to JPEG with 80% quality
+                const compressedData = canvas.toDataURL('image/jpeg', 0.8);
+
+                selectedImage = {
+                    data: compressedData,
+                    name: file.name,
+                    type: 'image/jpeg'
+                };
+
+                if (previewImage) {
+                    previewImage.src = selectedImage.data;
+                }
+                if (imagePreview) {
+                    imagePreview.classList.remove('hidden');
+                }
             };
-            
-            if (previewImage) {
-                previewImage.src = selectedImage.data;
-            }
-            if (imagePreview) {
-                imagePreview.classList.remove('hidden');
-            }
+            img.src = event.target.result;
         };
-        
+
         reader.readAsDataURL(file);
     }
     
