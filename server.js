@@ -430,7 +430,8 @@ io.on('connection', (socket) => {
         io.to(memberSocket).emit('room-created', {
           roomId: roomId,
           name: room.name,
-          members: room.members
+          members: room.members,
+          createdBy: room.createdBy
         });
       }
     });
